@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+uploads/*
+exports/*
+chroma_db/*
+.pytest_cache/
+tests/

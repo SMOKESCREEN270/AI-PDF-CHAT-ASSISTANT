@@ -1,0 +1,20 @@
+# Backend
+backend/.env
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/chroma_db/*
+!backend/chroma_db/.gitkeep
+backend/exports/*
+!backend/exports/.gitkeep
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS / editor
+.DS_Store
+.vscode/
