@@ -650,16 +650,35 @@ function OAuthCallbackPage() {
 
   useEffect(() => {
     let active = true;
-    void client.me()
-      .then(() => {
-        if (active) setLocation('/');
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(apiError(cause));
-          setLocation('/login');
+    // A single failed check right after the OAuth redirect can be a harmless
+    // timing blip (the auth cookie was already set by the backend's redirect
+    // response, but the very first request to confirm it can occasionally
+    // race that) rather than a real auth failure. Retry a few times with a
+    // short delay before actually giving up, instead of bouncing the user
+    // to /login on the very first hiccup and discarding a valid session.
+    const attemptConfirmation = async () => {
+      const maxAttempts = 4;
+      const delayMs = 400;
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (!active) return;
+        try {
+          await client.me();
+          if (active) setLocation('/');
+          return;
+        } catch (cause) {
+          lastError = cause;
+          if (attempt < maxAttempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
         }
-      });
+      }
+      if (active) {
+        setError(apiError(lastError));
+        setLocation('/login');
+      }
+    };
+    void attemptConfirmation();
     return () => {
       active = false;
     };
