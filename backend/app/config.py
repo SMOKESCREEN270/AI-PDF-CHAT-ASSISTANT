@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # by supplying their own key via the `X-User-Api-Key` header / request body -
     # in that case we NEVER persist their key, we just use it for that call.
     DEFAULT_GEMINI_API_KEY: str = ""
-    GEMINI_GENERATION_MODEL: str = "gemini-2.0-flash"
+    GEMINI_GENERATION_MODEL: str = "gemini-3.5-flash"
     GEMINI_EMBEDDING_MODEL: str = "models/text-embedding-004"
 
     # --- Vector store ---
