@@ -1,4 +1,5 @@
 import os
+import threading
 import uuid
 from typing import List, Optional
 
@@ -14,72 +15,83 @@ from app.services import pdf_processor, chunking, embeddings, vector_store, malw
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
+# Document ingestion (OCR + chunking + embedding) is memory- and API-quota-
+# heavy. Background tasks from different requests can run concurrently on
+# small/free-tier hosts, and uploading several documents at once (or several
+# in quick succession) can spike memory past the container's limit - which
+# gets the whole process OOM-killed rather than raising a catchable Python
+# exception - and/or burst past the Gemini free-tier per-minute quota all at
+# once. Serializing ingestion keeps peak memory and API request bursts down
+# to one document's worth at a time.
+_ingestion_lock = threading.Lock()
+
 
 def _ingest_document(document_id: str, api_key: Optional[str]):
     """Runs the full smart-PDF-understanding + RAG-indexing pipeline for one document."""
     # BackgroundTasks runs after the request dependency has closed its session.
     # Always reload the row in a fresh session and close it when ingestion ends.
-    db = SessionLocal()
-    document = None
-    try:
-        document = db.query(models.Document).filter(models.Document.id == document_id).first()
-        if not document:
-            return
-        pages = pdf_processor.process_pdf(document.filepath)
-        meta = pdf_processor.extract_metadata(document.filepath)
-        text_chunks = chunking.chunk_pages(pages)
+    with _ingestion_lock:
+        db = SessionLocal()
+        document = None
+        try:
+            document = db.query(models.Document).filter(models.Document.id == document_id).first()
+            if not document:
+                return
+            pages = pdf_processor.process_pdf(document.filepath)
+            meta = pdf_processor.extract_metadata(document.filepath)
+            text_chunks = chunking.chunk_pages(pages)
 
-        if not text_chunks:
-            document.status = models.DocumentStatus.FAILED
+            if not text_chunks:
+                document.status = models.DocumentStatus.FAILED
+                db.commit()
+                return
+
+            used_ocr_any = any(p.used_ocr for p in pages)
+
+            chunk_rows = []
+            for tc in text_chunks:
+                row = models.Chunk(
+                    document_id=document.id,
+                    chunk_index=tc.chunk_index,
+                    page_number=tc.page_number,
+                    line_start=tc.line_start,
+                    line_end=tc.line_end,
+                    text=tc.text,
+                    is_ocr=tc.is_ocr,
+                )
+                db.add(row)
+                chunk_rows.append(row)
+            db.flush()  # assign IDs without committing yet
+
+            # Embed + upsert into the document's own Chroma collection
+            texts = [c.text for c in text_chunks]
+            vectors = embeddings.embed_texts(texts, api_key=api_key)
+            ids = [row.id for row in chunk_rows]
+            metadatas = [
+                {
+                    "chunk_id": row.id,
+                    "document_id": document.id,
+                    "page": row.page_number,
+                    "line_start": row.line_start,
+                    "line_end": row.line_end,
+                }
+                for row in chunk_rows
+            ]
+            vector_store.upsert_chunks(document.collection_name, ids, vectors, texts, metadatas)
+
+            document.page_count = meta["page_count"]
+            document.used_ocr = used_ocr_any
+            document.status = models.DocumentStatus.READY
+            document.doc_metadata = {**document.doc_metadata, **meta}
             db.commit()
-            return
-
-        used_ocr_any = any(p.used_ocr for p in pages)
-
-        chunk_rows = []
-        for tc in text_chunks:
-            row = models.Chunk(
-                document_id=document.id,
-                chunk_index=tc.chunk_index,
-                page_number=tc.page_number,
-                line_start=tc.line_start,
-                line_end=tc.line_end,
-                text=tc.text,
-                is_ocr=tc.is_ocr,
-            )
-            db.add(row)
-            chunk_rows.append(row)
-        db.flush()  # assign IDs without committing yet
-
-        # Embed + upsert into the document's own Chroma collection
-        texts = [c.text for c in text_chunks]
-        vectors = embeddings.embed_texts(texts, api_key=api_key)
-        ids = [row.id for row in chunk_rows]
-        metadatas = [
-            {
-                "chunk_id": row.id,
-                "document_id": document.id,
-                "page": row.page_number,
-                "line_start": row.line_start,
-                "line_end": row.line_end,
-            }
-            for row in chunk_rows
-        ]
-        vector_store.upsert_chunks(document.collection_name, ids, vectors, texts, metadatas)
-
-        document.page_count = meta["page_count"]
-        document.used_ocr = used_ocr_any
-        document.status = models.DocumentStatus.READY
-        document.doc_metadata = {**document.doc_metadata, **meta}
-        db.commit()
-    except Exception as e:
-        if document is not None:
-            document.status = models.DocumentStatus.FAILED
-            document.doc_metadata = {**(document.doc_metadata or {}), "error": str(e)}
-            db.commit()
-        # The document remains FAILED with a human-readable error for polling.
-    finally:
-        db.close()
+        except Exception as e:
+            if document is not None:
+                document.status = models.DocumentStatus.FAILED
+                document.doc_metadata = {**(document.doc_metadata or {}), "error": str(e)}
+                db.commit()
+            # The document remains FAILED with a human-readable error for polling.
+        finally:
+            db.close()
 
 
 @router.post("/upload", response_model=List[schemas.DocumentOut])

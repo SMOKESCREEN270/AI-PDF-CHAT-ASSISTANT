@@ -14,7 +14,10 @@ from app.services.gemini import genai_lock
 
 
 def _get_model(api_key: Optional[str], system_instruction: Optional[str] = None):
-    key = api_key or settings.DEFAULT_GEMINI_API_KEY
+    # Strip whitespace for the same reason as embeddings.py's _configure -
+    # a stray space/newline from copy-pasting a key makes Google reject it
+    # as "API key not valid" with no hint that whitespace was the cause.
+    key = (api_key or settings.DEFAULT_GEMINI_API_KEY or "").strip()
     if not key:
         raise RuntimeError("No Gemini API key configured (server default or user-supplied).")
     genai.configure(api_key=key)
