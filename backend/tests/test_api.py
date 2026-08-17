@@ -116,6 +116,24 @@ def test_infected_upload_is_rejected_before_permanent_storage(client, monkeypatc
     assert response.json()["detail"] == "File failed security scan"
 
 
+def test_logout_does_not_revoke_other_active_sessions_for_same_user(client):
+    """Regression test: logging out one session must not lock the user out
+    of every other session until the revoked token's original expiry - only
+    the specific token that was logged out should stop working."""
+    register(client)
+    session_a = login(client)
+    session_b = login(client)
+
+    logout_response = client.post("/api/auth/logout", headers=session_a)
+    assert logout_response.status_code == 204
+
+    revoked_session_check = client.get("/api/auth/me", headers=session_a)
+    assert revoked_session_check.status_code == 401
+
+    other_session_check = client.get("/api/auth/me", headers=session_b)
+    assert other_session_check.status_code == 200
+
+
 def test_due_flashcards_only_include_passed_review_dates(client):
     user = register(client)
     headers = login(client)

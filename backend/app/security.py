@@ -121,11 +121,12 @@ def get_current_user(
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+    # Only this specific token's jti matters here. Account-wide blocking
+    # (e.g. deactivation) is already enforced above via user.is_active,
+    # so matching on user_id here would incorrectly revoke every other
+    # active session for the user whenever any single session logs out.
     if db.query(models.RevokedToken).filter(
-        or_(
-            models.RevokedToken.jti == jti,
-            models.RevokedToken.user_id == user_id,
-        ),
+        models.RevokedToken.jti == jti,
         models.RevokedToken.expires_at >= datetime.utcnow(),
     ).first():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")

@@ -354,6 +354,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         db.refresh(user)
 
     jwt_token = create_access_token(subject=user.id)
-    response = RedirectResponse(url="/oauth-callback")
+    # Must be absolute: a relative "/oauth-callback" resolves against the
+    # backend's own domain (since that's where this redirect executes),
+    # not the frontend - and /oauth-callback only exists in the frontend app.
+    response = RedirectResponse(url=f"{settings.FRONTEND_URL.rstrip('/')}/oauth-callback")
     set_auth_cookie(response, jwt_token)
     return response
