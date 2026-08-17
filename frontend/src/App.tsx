@@ -14,13 +14,9 @@ import {
   Check,
   CircleHelp,
   FileText,
-  Folder,
-  Grid2X2,
-  History as HistoryIcon,
-  Library as LibraryIcon,
   LockKeyhole,
   MessageSquare,
-  MoreVertical,
+  MessagesSquare,
   Plus,
   Search,
   Settings as SettingsIcon,
@@ -28,7 +24,6 @@ import {
   Trash2,
   Upload,
   User,
-  UserRound,
   X,
 } from 'lucide-react';
 import { Link, Route, Switch, useLocation } from 'wouter';
@@ -72,9 +67,6 @@ function displayName(doc: Document) {
   const title = doc.doc_metadata.title;
   return typeof title === 'string' && title.trim() ? title : doc.filename.replace(/\.pdf$/i, '');
 }
-function docSummary(doc: Document) {
-  return String(doc.doc_metadata.summary || doc.doc_metadata.short_summary || 'Ready for grounded questions, summaries, and study tools.');
-}
 function apiError(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 }
@@ -84,12 +76,9 @@ function Brand() {
 }
 
 const navigation = [
-  { href: '/chat', label: 'Chat', icon: MessageSquare },
-  { href: '/', label: 'Dashboard', icon: Grid2X2 },
+  { href: '/', label: 'Chat', icon: MessageSquare },
   { href: '/comparisons', label: 'Comparisons', icon: ArrowRight },
   { href: '/study-tools', label: 'Study Tools', icon: BookOpen },
-  { href: '/history', label: 'History', icon: HistoryIcon },
-  { href: '/library', label: 'Library', icon: LibraryIcon },
 ];
 
 function Shell({ children }: { children: ReactNode }) {
@@ -100,7 +89,7 @@ function Shell({ children }: { children: ReactNode }) {
     <aside className="sidebar">
       <Brand />
       <button className="upload-button" onClick={openUpload}><Plus size={15} /> New Document</button>
-      <nav className="side-nav">{navigation.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${location === href ? 'active' : ''}`}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}</nav>
+      <nav className="side-nav">{navigation.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${(location === href || (href === '/' && location === '/chat')) ? 'active' : ''}`}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}</nav>
       <div className="sidebar-bottom">
         <Link href="/settings" className={`nav-link ${location === '/settings' ? 'active' : ''}`}><SettingsIcon size={18} /><span className="nav-label">Settings</span></Link>
         <Link href="/profile" className="profile-mini"><span className="avatar">{(user?.email?.[0] || 'R').toUpperCase()}</span><span><b>{user?.full_name || user?.email || 'Researcher'}</b><br /><span className="small muted">Researcher</span></span></Link>
@@ -173,18 +162,6 @@ function UploadModal({ onClose }: { onClose: () => void }) {
 function Status({ doc }: { doc: Document }) {
   const status = doc.status === 'ready' ? 'Ready' : doc.status === 'failed' ? 'Failed' : 'Processing';
   return <span className={`status-pill status-${doc.status}`}><span>●</span> {status}</span>;
-}
-
-function DocumentCard({ doc }: { doc: Document }) {
-  const { setSelectedId } = useWorkspace();
-  return <article className="card doc-card"><Link href={`/document/${doc.id}`} onClick={() => setSelectedId(doc.id)}><div className="doc-cover"><FileText size={42} strokeWidth={1} /><span style={{ position: 'absolute', bottom: 10, right: 13, fontSize: 10 }}>PDF · {doc.page_count} PP</span></div><div className="doc-card-body"><div className="paper-title">{displayName(doc)}</div><div className="doc-card-meta"><span>{doc.created_at ? new Date(doc.created_at).toLocaleDateString() : 'Recently added'}</span><MoreVertical size={15} /></div><div className="action-row" style={{ marginTop: 13 }}><Status doc={doc} /></div></div></Link></article>;
-}
-
-function Dashboard() {
-  const { documents, openUpload } = useWorkspace();
-  const ready = documents.filter((doc) => doc.status === 'ready').length;
-  const processing = documents.filter((doc) => doc.status === 'processing').length;
-  return <div className="page"><div className="page-heading"><div><span className="eyebrow">Research desk</span><h1>Good morning.</h1><p>Your library is connected to the real PDF processing and retrieval service.</p></div><button className="gold-button" onClick={openUpload}><Plus size={16} /> New document</button></div><div className="grid grid-3" style={{ marginBottom: 30 }}><div className="card stat-card"><span className="eyebrow">Papers in library</span><div className="stat-value">{documents.length}</div><div className="stat-note">{ready} ready to explore</div></div><div className="card stat-card"><span className="eyebrow">Ready for questions</span><div className="stat-value">{ready}</div><div className="stat-note">Grounded in your sources</div></div><div className="card stat-card"><span className="eyebrow">Processing queue</span><div className="stat-value">{processing}</div><div className="stat-note">{processing ? 'Updating automatically' : 'All caught up'}</div></div></div>{documents.length ? <><section className="section-title"><h2>Recent documents</h2><Link href="/library" className="gold-link">View library <ArrowRight size={14} /></Link></section><div className="doc-grid">{documents.slice(0, 3).map((doc) => <DocumentCard key={doc.id} doc={doc} />)}</div></> : <div className="empty-state"><FileText size={26} /><h3>Your library is ready</h3><p>Upload a PDF to start asking grounded questions.</p><button className="gold-button" onClick={openUpload}><Upload size={15} /> Add a paper</button></div>}</div>;
 }
 
 function CitationCard({ citation, onOpen }: { citation: Citation; onOpen?: (citation: Citation) => void }) {
@@ -304,9 +281,10 @@ function ExportControl({ kind, refId, data, label = 'Export' }: { kind: string; 
   </div>;
 }
 
+type ChatSessionSummary = { id: string; title: string; document_ids: string[]; created_at: string };
+
 function Chat() {
-  const { documents, selectedId, setSelectedId } = useWorkspace();
-  const readyDocs = documents.filter((doc) => doc.status === 'ready');
+  const { documents, selectedId, openUpload, refreshDocuments, notify } = useWorkspace();
   const [chosen, setChosen] = useState<string[]>(selectedId ? [selectedId] : []);
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -315,10 +293,60 @@ function Chat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [resuming, setResuming] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedId && !chosen.length) setChosen([selectedId]);
   }, [selectedId, chosen.length]);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      setSessions(await client.listSessions());
+    } catch {
+      // Chat history is a convenience list; a failed fetch shouldn't block chatting.
+    }
+  }, []);
+  useEffect(() => { void loadSessions(); }, [loadSessions]);
+
+  function newChat() {
+    setSessionId(null);
+    setMessages([]);
+    setLastResponse(null);
+    setActiveCitation(null);
+    setError('');
+    setInput('');
+  }
+
+  async function resumeSession(session: ChatSessionSummary) {
+    setResuming(session.id);
+    setError('');
+    try {
+      const history = await client.getSessionMessages(session.id);
+      setMessages(history);
+      setSessionId(session.id);
+      setLastResponse(null);
+      setActiveCitation(null);
+      if (session.document_ids?.length) {
+        setChosen(session.document_ids.filter((id) => documents.some((doc) => doc.id === id)));
+      }
+    } catch (cause) {
+      setError(apiError(cause));
+    } finally {
+      setResuming(null);
+    }
+  }
+
+  async function removeDocument(id: string) {
+    try {
+      await client.deleteDocument(id);
+      await refreshDocuments();
+      setChosen((current) => current.filter((docId) => docId !== id));
+      notify('Document deleted');
+    } catch (cause) {
+      setError(apiError(cause));
+    }
+  }
 
   async function send() {
     if (!input.trim() || !chosen.length || busy) return;
@@ -335,6 +363,7 @@ function Chat() {
         session_id: sessionId,
         user_api_key: storedKey ? { provider: 'gemini', api_key: storedKey } : null,
       });
+      const isNewSession = !sessionId;
       setSessionId(response.session_id);
       setLastResponse(response);
       setMessages((current) => [...current, {
@@ -346,6 +375,7 @@ function Chat() {
         hallucination_flag: response.hallucination_flag,
         highlighted_sections: response.highlighted_sections,
       }]);
+      if (isNewSession) void loadSessions();
     } catch (cause) {
       setError(apiError(cause));
     } finally {
@@ -361,13 +391,36 @@ function Chat() {
       </div>
       <div className={`card chat-layout ${activeCitation ? 'has-pdf-viewer' : ''}`}>
         <aside className="chat-context">
-          <span className="eyebrow">Documents in scope</span>
-          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-            {readyDocs.map((doc) => <label key={doc.id} className={`option ${chosen.includes(doc.id) ? 'selected' : ''}`}>
-              <input type="checkbox" checked={chosen.includes(doc.id)} onChange={() => setChosen((current) => current.includes(doc.id) ? current.filter((id) => id !== doc.id) : [...current, doc.id])} /> <span className="small">{displayName(doc)}</span>
-            </label>)}
+          <button className="new-chat-button" onClick={newChat}><Plus size={15} /> New chat</button>
+          <div className="chats-list">
+            <span className="eyebrow">Chats</span>
+            {sessions.length ? <div className="chat-history">
+              {sessions.map((session) => <button
+                key={session.id}
+                type="button"
+                className={`chat-history-item ${sessionId === session.id ? 'active' : ''}`}
+                disabled={resuming === session.id}
+                onClick={() => void resumeSession(session)}
+              >
+                <MessagesSquare size={14} />
+                <span className="chat-history-title">{session.title || 'Untitled chat'}</span>
+              </button>)}
+            </div> : <p className="small muted">No chats yet.</p>}
           </div>
-          <button className="outline-button" style={{ marginTop: 15 }} onClick={() => { setSessionId(null); setMessages([]); setLastResponse(null); setActiveCitation(null); }}>New conversation</button>
+          <div className="chat-context-divider" />
+          <div className="chat-docs">
+            <div className="section-title" style={{ marginBottom: 4 }}><span className="eyebrow">Documents</span><button className="icon-button" onClick={openUpload} aria-label="Upload document" title="Upload a PDF"><Upload size={15} /></button></div>
+            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+              {documents.length ? documents.map((doc) => <div key={doc.id} className={`doc-option ${chosen.includes(doc.id) ? 'selected' : ''}`}>
+                <label className="doc-option-label">
+                  <input type="checkbox" checked={chosen.includes(doc.id)} disabled={doc.status !== 'ready'} onChange={() => setChosen((current) => current.includes(doc.id) ? current.filter((id) => id !== doc.id) : [...current, doc.id])} />
+                  <span className="small">{displayName(doc)}</span>
+                </label>
+                {doc.status !== 'ready' && <Status doc={doc} />}
+                <button className="icon-button" title="Delete document" aria-label={`Delete ${displayName(doc)}`} onClick={() => void removeDocument(doc.id)}><Trash2 size={13} /></button>
+              </div>) : <p className="small muted">No documents yet. Upload a PDF to get started.</p>}
+            </div>
+          </div>
         </aside>
         <section className="chat-main">
           <div className="chat-messages">
@@ -542,27 +595,6 @@ function StudyTools() {
   </div>;
 }
 
-function Library() {
-  const { documents, setSelectedId, openUpload } = useWorkspace();
-  const [query, setQuery] = useState('');
-  const [error, setError] = useState('');
-  const filtered = documents.filter((doc) => displayName(doc).toLowerCase().includes(query.toLowerCase()));
-  async function remove(id: string) {
-    try { await client.deleteDocument(id); window.location.reload(); } catch (cause) { setError(apiError(cause)); }
-  }
-  return <div className="page"><div className="page-heading"><div><span className="eyebrow">Personal archive</span><h1>My library.</h1><p>Documents are fetched from the authenticated backend and update while processing.</p></div><button className="gold-button" onClick={openUpload}><Upload size={15} /> Upload PDF</button></div><div className="action-row" style={{ marginBottom: 20 }}><div className="search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search documents…" /></div></div>{error && <p className="error-message">{error}</p>}{filtered.length ? <div className="doc-grid">{filtered.map((doc) => <article key={doc.id} style={{ position: 'relative' }}><DocumentCard doc={doc} /><button className="icon-button" style={{ position: 'absolute', top: 8, right: 8 }} onClick={() => void remove(doc.id)} title="Delete document"><Trash2 size={15} /></button>{doc.status === 'failed' && <p className="error-message small">{String(doc.doc_metadata.error || 'Document processing failed')}</p>}</article>)}</div> : <div className="empty-state"><FileText size={26} /><h3>No papers found</h3><button className="gold-button" onClick={openUpload}>Add a paper</button></div>}</div>;
-}
-
-function DocumentPage() {
-  const { documents, selectedId, setSelectedId } = useWorkspace();
-  const [location] = useLocation();
-  const id = location.split('/').pop() || selectedId;
-  const doc = documents.find((item) => item.id === id) || documents[0];
-  if (!doc) return <div className="page"><div className="empty-state">Upload a document to view its analysis.</div></div>;
-  const insights = Array.isArray(doc.doc_metadata.key_insights) ? doc.doc_metadata.key_insights.map(String) : [];
-  return <div className="page"><div className="action-row" style={{ marginBottom: 20 }}><Link href="/library" className="gold-link"><ArrowRight size={14} style={{ transform: 'rotate(180deg)' }} /> Library</Link></div><div className="page-heading"><div><Status doc={doc} /><h1 style={{ marginTop: 14 }}>{displayName(doc)}</h1><p>{doc.filename} · {doc.page_count} pages</p></div><Link className="gold-button" href="/chat" onClick={() => setSelectedId(doc.id)}>Discuss this paper <ArrowRight size={15} /></Link></div><div className="card card-pad accent-card"><h2>Document metadata</h2><p className="summary-copy">{/* Safe by default: React escapes document summary text. */}{docSummary(doc)}</p>{insights.length > 0 && <ul>{insights.map((item) => <li key={item}>{/* Safe by default: React escapes document insight text. */}{item}</li>)}</ul>}</div></div>;
-}
-
 function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [, setLocation] = useLocation();
   const { login, register } = useAuth();
@@ -718,12 +750,6 @@ function Profile() {
   return <div className="page"><div className="page-heading"><div><span className="eyebrow">Researcher profile</span><h1>Your account.</h1><p>Authenticated account details from the current session.</p></div><User size={26} color="var(--gold)" /></div><section className="card profile-hero"><div className="avatar-large">{(user?.email?.[0] || 'R').toUpperCase()}</div><div><span className="eyebrow">Researcher</span><h2 className="profile-name">{user?.full_name || user?.email}</h2><p className="muted serif">{user?.email}</p></div></section></div>;
 }
 
-function History() {
-  const [sessions, setSessions] = useState<Array<{ id: string; title: string; created_at: string }>>([]);
-  useEffect(() => { void client.listSessions().then(setSessions).catch(() => setSessions([])); }, []);
-  return <div className="page"><div className="page-heading"><div><span className="eyebrow">Your research trail</span><h1>History & analysis.</h1><p>Saved chat sessions are retrieved from the backend.</p></div></div>{sessions.length ? <div className="timeline">{sessions.map((session) => <article className="card card-pad" key={session.id}><span className="status-pill">Chat session</span><h2 style={{ margin: '12px 0 5px' }}>{session.title}</h2><p className="muted">{new Date(session.created_at).toLocaleString()}</p><Link className="gold-button" href="/chat">Resume chat <ArrowRight size={15} /></Link></article>)}</div> : <div className="empty-state"><HistoryIcon size={25} /><p>No saved chat sessions yet.</p></div>}</div>;
-}
-
 function NotFoundPage() {
   return <div className="empty-state" style={{ margin: 50 }}><CircleHelp size={30} /><h1>Page not found</h1><Link className="gold-button" href="/">Return home</Link></div>;
 }
@@ -732,7 +758,7 @@ function ProtectedApp() {
   const { user, loading } = useAuth();
   if (loading) return <div className="auth-page"><div className="empty-state" style={{ margin: 'auto' }}>Restoring your research desk…</div></div>;
   if (!user) return <AuthPage mode="login" />;
-  return <WorkspaceProvider><Shell><Switch><Route path="/" component={Dashboard} /><Route path="/chat" component={Chat} /><Route path="/comparisons" component={Comparisons} /><Route path="/study-tools" component={StudyTools} /><Route path="/history" component={History} /><Route path="/library" component={Library} /><Route path="/settings" component={Settings} /><Route path="/profile" component={Profile} /><Route path="/document/:id" component={DocumentPage} /><Route component={NotFoundPage} /></Switch></Shell></WorkspaceProvider>;
+  return <WorkspaceProvider><Shell><Switch><Route path="/" component={Chat} /><Route path="/chat" component={Chat} /><Route path="/comparisons" component={Comparisons} /><Route path="/study-tools" component={StudyTools} /><Route path="/settings" component={Settings} /><Route path="/profile" component={Profile} /><Route component={NotFoundPage} /></Switch></Shell></WorkspaceProvider>;
 }
 
 function Router() {
