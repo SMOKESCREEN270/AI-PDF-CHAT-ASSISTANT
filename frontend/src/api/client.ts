@@ -55,6 +55,13 @@ export type ChatMessage = {
   created_at?: string;
 };
 
+export type ChatSessionSummary = {
+  id: string;
+  title: string;
+  document_ids: string[];
+  created_at: string;
+};
+
 export type AuthMessage = {
   message: string;
   reset_token?: string | null;
@@ -195,7 +202,7 @@ export const client = {
     return request<ChatResponse>('/chat', { method: 'POST', body: JSON.stringify(payload) });
   },
   listSessions() {
-    return request<Array<{ id: string; title: string; document_ids: string[]; created_at: string }>>('/chat/sessions');
+    return request<ChatSessionSummary[]>('/chat/sessions');
   },
   getSessionMessages(sessionId: string) {
     return request<ChatMessage[]>(`/chat/sessions/${encodeURIComponent(sessionId)}/messages`);
