@@ -36,13 +36,25 @@ class Settings(BaseSettings):
     SMTP_USE_SSL: bool = False
     SMTP_TIMEOUT_SECONDS: int = 10
 
-    # --- LLM / Embeddings ---
+    # --- LLM / Embeddings (OpenRouter) ---
     # Platform-provided default key (free tier). Users may override per-request
     # by supplying their own key via the `X-User-Api-Key` header / request body -
     # in that case we NEVER persist their key, we just use it for that call.
-    DEFAULT_GEMINI_API_KEY: str = ""
-    GEMINI_GENERATION_MODEL: str = "gemini-3.5-flash"
-    GEMINI_EMBEDDING_MODEL: str = "models/text-embedding-004"
+    DEFAULT_OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    # openai/gpt-oss-20b:free supports structured JSON outputs, which the app
+    # relies on for questionnaires/quizzes/flashcards/summaries. Swap freely -
+    # OpenRouter's free-model lineup rotates; check https://openrouter.ai/models?fmt=cards&max_price=0
+    # if this one gets deprecated or rate-limited away.
+    OPENROUTER_GENERATION_MODEL: str = "openai/gpt-oss-20b:free"
+    # liquid/lfm-2.5-embedding-350m:free - 1024-dim, 512-token input limit per
+    # chunk (fine given CHUNK_SIZE below is in characters, not tokens).
+    OPENROUTER_EMBEDDING_MODEL: str = "liquid/lfm-2.5-embedding-350m:free"
+    # Optional but recommended by OpenRouter for free-tier usage: sent as the
+    # HTTP-Referer / X-Title headers so requests are attributed to this app
+    # (helps with their rate-limit/ranking heuristics). Not secrets.
+    OPENROUTER_SITE_URL: str = ""
+    OPENROUTER_APP_NAME: str = "AI PDF Chat Assistant"
 
     # --- Vector store ---
     CHROMA_PERSIST_DIR: str = "./chroma_db"

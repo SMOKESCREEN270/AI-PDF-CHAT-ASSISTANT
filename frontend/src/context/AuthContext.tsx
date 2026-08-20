@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     async deactivateAccount(currentPassword: string) {
       await client.deactivateAccount(currentPassword);
-      sessionStorage.removeItem('pdf-assistant-gemini-key');
+      sessionStorage.removeItem('pdf-assistant-openrouter-key');
       setUser(null);
     },
   }), [loading, user]);

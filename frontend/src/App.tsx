@@ -171,7 +171,7 @@ function WorkspaceProvider({ children }: { children: ReactNode }) {
 function UploadModal({ onClose }: { onClose: () => void }) {
   const { refreshDocuments, setSelectedId, notify } = useWorkspace();
   const [files, setFiles] = useState<File[]>([]);
-  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('pdf-assistant-gemini-key') || '');
+  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('pdf-assistant-openrouter-key') || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function submit() {
@@ -179,7 +179,7 @@ function UploadModal({ onClose }: { onClose: () => void }) {
     setBusy(true); setError('');
     try {
       const uploaded = await client.uploadDocuments(files, apiKey || undefined);
-      sessionStorage.setItem('pdf-assistant-gemini-key', apiKey);
+      sessionStorage.setItem('pdf-assistant-openrouter-key', apiKey);
       await refreshDocuments();
       if (uploaded[0]) setSelectedId(uploaded[0].id);
       notify(`${uploaded.length} document${uploaded.length === 1 ? '' : 's'} uploaded`);
@@ -189,7 +189,7 @@ function UploadModal({ onClose }: { onClose: () => void }) {
   return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true">
     <div className="section-title"><div><span className="eyebrow">Library intake</span><h2>Add papers</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div>
     <label className="dropzone"><Upload size={25} /><strong>{files.length ? `${files.length} PDF${files.length === 1 ? '' : 's'} selected` : 'Choose PDF files'}</strong><span className="muted small">The backend will process and index them for grounded answers.</span><input type="file" accept=".pdf,application/pdf" multiple hidden onChange={(event) => setFiles(Array.from(event.target.files || []))} /></label>
-    <label className="label">Optional Gemini API key<input className="field" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Used for this request only" /></label>
+    <label className="label">Optional OpenRouter API key<input className="field" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Used for this request only" /></label>
     {error && <p className="error-message">{error}</p>}
     <div className="action-row" style={{ justifyContent: 'flex-end', marginTop: 20 }}><button className="outline-button" onClick={onClose}>Cancel</button><button className="gold-button" disabled={!files.length || busy} onClick={() => void submit()}>{busy ? 'Processing…' : 'Upload and analyze'} <ArrowRight size={15} /></button></div>
   </div></div>;
@@ -450,13 +450,13 @@ function Chat() {
     setError('');
     setMessages((current) => [...current, { role: 'user', content: question }]);
     try {
-      const storedKey = sessionStorage.getItem('pdf-assistant-gemini-key');
+      const storedKey = sessionStorage.getItem('pdf-assistant-openrouter-key');
       const isNewSession = !sessionId;
       const response = await client.chat({
         document_ids: chosen,
         message: question,
         session_id: sessionId,
-        user_api_key: storedKey ? { provider: 'gemini', api_key: storedKey } : null,
+        user_api_key: storedKey ? { provider: 'openrouter', api_key: storedKey } : null,
       });
       setSessionId(response.session_id);
       setActiveSessionId(response.session_id);
@@ -539,7 +539,7 @@ function Comparisons() {
   }
   return <div className="page">
     <div className="page-heading">
-      <div><span className="eyebrow">Literature mapping</span><h1>Compare the field.</h1><p>Ask Gemini to compare real excerpts from your selected documents.</p></div>
+      <div><span className="eyebrow">Literature mapping</span><h1>Compare the field.</h1><p>Ask the AI to compare real excerpts from your selected documents.</p></div>
       <div className="action-row"><button className="gold-button" disabled={busy} onClick={() => void compare()}><Sparkles size={15} /> {busy ? 'Synthesizing…' : 'Synthesize selection'}</button>{result && <ExportControl kind="comparison" refId="comparison-result" data={result as unknown as Record<string, unknown>} label="Export comparison" />}</div>
     </div>
     <div className="card card-pad" style={{ marginBottom: 28 }}>
@@ -604,8 +604,8 @@ function StudyTools() {
     setChecked({});
     setFlipped({});
     try {
-      const key = sessionStorage.getItem('pdf-assistant-gemini-key');
-      const auth = key ? { provider: 'gemini', api_key: key } : null;
+      const key = sessionStorage.getItem('pdf-assistant-openrouter-key');
+      const auth = key ? { provider: 'openrouter', api_key: key } : null;
       const response = tab === 'quiz'
         ? await client.generateQuiz({ document_id: documentId, num_questions: 8, user_api_key: auth })
         : tab === 'flashcards'
@@ -790,7 +790,7 @@ function OAuthCallbackPage() {
 }
 
 function Settings() {
-  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('pdf-assistant-gemini-key') || '');
+  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('pdf-assistant-openrouter-key') || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [deactivationError, setDeactivationError] = useState('');
   const [deactivationBusy, setDeactivationBusy] = useState(false);
@@ -818,7 +818,7 @@ function Settings() {
       <div className="avatar-large">{(user?.email?.[0] || 'R').toUpperCase()}</div>
       <div><span className="eyebrow">Account</span><h2 className="profile-name">{user?.full_name || user?.email}</h2><p className="muted serif">{user?.email}</p></div>
     </section>
-    <section className="card card-pad"><div className="section-title"><h2>AI preferences</h2><Sparkles size={19} color="var(--gold)" /></div><label className="label">Optional Gemini API key<input className="field" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></label><p className="muted small">Stored in sessionStorage only and sent per request. This is a known tradeoff to revisit when a backend-issued httpOnly-cookie flow is available; it is not stored in localStorage.</p><button className="gold-button" onClick={() => { sessionStorage.setItem('pdf-assistant-gemini-key', apiKey); notify('AI preferences saved'); }}>Save preferences</button></section>
+    <section className="card card-pad"><div className="section-title"><h2>AI preferences</h2><Sparkles size={19} color="var(--gold)" /></div><label className="label">Optional OpenRouter API key<input className="field" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></label><p className="muted small">Stored in sessionStorage only and sent per request. This is a known tradeoff to revisit when a backend-issued httpOnly-cookie flow is available; it is not stored in localStorage.</p><button className="gold-button" onClick={() => { sessionStorage.setItem('pdf-assistant-openrouter-key', apiKey); notify('AI preferences saved'); }}>Save preferences</button></section>
     <section className="card card-pad" style={{ marginTop: 24 }}><div className="section-title"><h2>Deactivate account</h2><LockKeyhole size={19} color="var(--gold)" /></div><p className="muted">This permanently signs you out and disables future sign-ins. Re-enter your current password to confirm.</p><form className="auth-form-fields" onSubmit={submitDeactivation}><label className="label">Current password<input className="field" type="password" required minLength={8} value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>{deactivationError && <p className="error-message">{deactivationError}</p>}<button className="outline-button" type="submit" disabled={deactivationBusy}>{deactivationBusy ? 'Deactivating…' : 'Deactivate account'}</button></form></section>
   </div>;
 }

@@ -71,7 +71,7 @@ class DocumentOut(BaseModel):
 # ---------- Chat ----------
 class UserApiKey(BaseModel):
     """Optional bring-your-own-key, used per-request only, never stored."""
-    provider: str = "gemini"       # "gemini" | "openai" | "anthropic" (extensible)
+    provider: str = "openrouter"   # "openrouter" | "gemini" | "openai" | "anthropic" (extensible)
     api_key: Optional[str] = None
 
 

@@ -181,10 +181,10 @@ export const client = {
   googleLoginRedirect() {
     window.location.assign(`${API_BASE_URL}/api/auth/google/login`);
   },
-  uploadDocuments(files: File[], geminiApiKey?: string) {
+  uploadDocuments(files: File[], openrouterApiKey?: string) {
     const form = new FormData();
     files.forEach((file) => form.append('files', file));
-    if (geminiApiKey) form.append('gemini_api_key', geminiApiKey);
+    if (openrouterApiKey) form.append('openrouter_api_key', openrouterApiKey);
     return request<Document[]>('/documents/upload', { method: 'POST', body: form });
   },
   listDocuments() {

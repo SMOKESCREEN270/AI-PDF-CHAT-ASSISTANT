@@ -39,7 +39,9 @@ services:
       SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:-change-this-session-secret}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      DEFAULT_GEMINI_API_KEY: ${DEFAULT_GEMINI_API_KEY:-}
+      DEFAULT_OPENROUTER_API_KEY: ${DEFAULT_OPENROUTER_API_KEY:-}
+      OPENROUTER_GENERATION_MODEL: ${OPENROUTER_GENERATION_MODEL:-openai/gpt-oss-20b:free}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-liquid/lfm-2.5-embedding-350m:free}
       CHROMA_PERSIST_DIR: /app/chroma_db
       UPLOAD_DIR: /app/uploads
       CLAMD_HOST: clamav

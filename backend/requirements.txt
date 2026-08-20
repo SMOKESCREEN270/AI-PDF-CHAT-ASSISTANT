@@ -26,7 +26,8 @@ Pillow==12.3.0
 # RAG / retrieval
 chromadb==0.5.5
 rank-bm25==0.2.2
-google-generativeai==0.8.2
+# LLM/embeddings now go through OpenRouter's OpenAI-compatible REST API via
+# httpx (already a dependency above) - no dedicated SDK needed.
 
 # export
 python-docx==1.1.2

@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 # small/free-tier hosts, and uploading several documents at once (or several
 # in quick succession) can spike memory past the container's limit - which
 # gets the whole process OOM-killed rather than raising a catchable Python
-# exception - and/or burst past the Gemini free-tier per-minute quota all at
+# exception - and/or burst past the OpenRouter free-tier rate limit all at
 # once. Serializing ingestion keeps peak memory and API request bursts down
 # to one document's worth at a time.
 _ingestion_lock = threading.Lock()
@@ -98,7 +98,7 @@ def _ingest_document(document_id: str, api_key: Optional[str]):
 async def upload_documents(
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
-    gemini_api_key: Optional[str] = Form(None),
+    openrouter_api_key: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -181,7 +181,7 @@ async def upload_documents(
         db.commit()
         db.refresh(document)
 
-        background_tasks.add_task(_ingest_document, document.id, gemini_api_key)
+        background_tasks.add_task(_ingest_document, document.id, openrouter_api_key)
         results.append(document)
 
     return results
