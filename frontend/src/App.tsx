@@ -418,9 +418,20 @@ function Chat() {
   }, [activeSessionId, chosen.length, documents]);
 
   // Resuming a chat picked from the sidebar: load its history and restore
-  // which documents it was scoped to.
+  // which documents it was scoped to. Starting a brand-new chat (activeSessionId
+  // goes back to null) clears out whatever the previous conversation left behind,
+  // instead of silently keeping the old messages/documents/citation viewer around.
   useEffect(() => {
-    if (!activeSessionId || activeSessionId === sessionId) return;
+    if (activeSessionId === sessionId) return;
+    if (!activeSessionId) {
+      setSessionId(null);
+      setMessages([]);
+      setLastResponse(null);
+      setChosen([]);
+      setActiveCitation(null);
+      setError('');
+      return;
+    }
     let active = true;
     setLoadingSession(true);
     setError('');
@@ -430,10 +441,11 @@ function Chat() {
         setMessages(history);
         setSessionId(activeSessionId);
         setLastResponse(null);
+        setActiveCitation(null);
         const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant');
         void client.listSessions().then((sessions) => {
           const match = sessions.find((s) => s.id === activeSessionId);
-          if (match && active) setChosen(match.document_ids);
+          if (match && active) setChosen(match.document_ids ?? []);
         });
         void lastAssistant;
       })
