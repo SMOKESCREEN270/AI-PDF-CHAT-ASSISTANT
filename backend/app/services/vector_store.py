@@ -6,10 +6,14 @@ deleting a document is a single collection drop, and retrieval can be scoped
 cheaply to just the documents the user picked for a chat session.
 """
 from typing import List, Dict, Any, Optional
+import logging
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 _client = None
 
@@ -41,16 +45,31 @@ def upsert_chunks(collection_name: str, ids: List[str], embeddings: List[List[fl
 
 def semantic_search(collection_names: List[str], query_embedding: List[float],
                      top_k: int = 8) -> List[Dict[str, Any]]:
-    """Searches across one or more per-document collections and merges results."""
+    """Searches across one or more per-document collections and merges results.
+
+    A collection can fail to query even after it's found - most commonly
+    because it was embedded with a different model/dimensionality than the
+    one currently configured (e.g. the embedding model changed, or a
+    document was ingested under an older config). That's a per-document
+    problem, not a request-wide one: skip that collection and keep going
+    with whatever the rest can still contribute, rather than letting one
+    stale document take down every chat turn that includes it.
+    """
     client = get_client()
     hits: List[Dict[str, Any]] = []
     for name in collection_names:
         try:
             coll = client.get_collection(name)
-        except Exception:
+            res = coll.query(query_embeddings=[query_embedding], n_results=top_k,
+                              include=["documents", "metadatas", "distances"])
+        except Exception as exc:
+            # Most common cause: this document was embedded under a
+            # different model/dimensionality than the one currently
+            # configured, so its collection can't be queried with today's
+            # query vector. Log it (so it's visible which document needs
+            # re-ingesting) and fall back to keyword search alone for it.
+            logger.warning("Skipping collection %s in semantic search: %s", name, exc)
             continue
-        res = coll.query(query_embeddings=[query_embedding], n_results=top_k,
-                          include=["documents", "metadatas", "distances"])
         for doc_text, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
             similarity = 1 - dist  # cosine distance -> similarity
             hits.append({"text": doc_text, "metadata": meta, "score": similarity})

@@ -12,6 +12,7 @@ import {
   BookOpen,
   Brain,
   Check,
+  CheckSquare,
   CircleHelp,
   Clock,
   FileText,
@@ -21,6 +22,7 @@ import {
   Plus,
   Settings as SettingsIcon,
   Sparkles,
+  Square,
   Trash2,
   Upload,
   X,
@@ -82,40 +84,33 @@ function Brand() {
 }
 
 const navigation = [
-  { href: '/overview', label: 'Overview', icon: LayoutDashboard },
-  { href: '/comparisons', label: 'Comparisons', icon: ArrowRight },
+  { href: '/chat', label: 'Chat', icon: MessageSquare },
+  { href: '/history', label: 'History', icon: Clock },
   { href: '/study-tools', label: 'Study Tools', icon: BookOpen },
+  { href: '/comparisons', label: 'Comparisons', icon: ArrowRight },
+  { href: '/library', label: 'Library', icon: FileText },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
 ];
 
 function Shell({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
-  const { chatSessions, setActiveSessionId } = useWorkspace();
+  const { setActiveSessionId } = useWorkspace();
   const { user, logout } = useAuth();
 
   function startNewChat() {
     setActiveSessionId(null);
     setLocation('/chat');
   }
-  function resumeChat(sessionId: string) {
-    setActiveSessionId(sessionId);
-    setLocation('/chat');
+  function isActive(href: string) {
+    if (href === '/chat') return location === '/chat' || location === '/';
+    return location === href;
   }
 
   return <div className="app-shell">
     <aside className="sidebar">
       <Brand />
       <button className="upload-button" onClick={startNewChat}><Plus size={15} /> New chat</button>
-      <nav className="side-nav">{navigation.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${location === href ? 'active' : ''}`}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}</nav>
-      <div className="chats-list-section">
-        <span className="eyebrow chats-list-heading">Chats</span>
-        <div className="chats-list">
-          {chatSessions.length === 0 && <span className="small muted chats-list-empty">No conversations yet</span>}
-          {chatSessions.map((session) => <button key={session.id} type="button" className="chat-list-item" onClick={() => resumeChat(session.id)}>
-            <MessageSquare size={14} />
-            <span className="chat-list-item-title">{session.title || 'Untitled chat'}</span>
-          </button>)}
-        </div>
-      </div>
+      <nav className="side-nav">{navigation.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${isActive(href) ? 'active' : ''}`}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}</nav>
       <div className="sidebar-bottom">
         <Link href="/settings" className={`nav-link ${location === '/settings' ? 'active' : ''}`}><SettingsIcon size={18} /><span className="nav-label">Settings</span></Link>
         <div className="profile-mini"><span className="avatar">{(user?.email?.[0] || 'R').toUpperCase()}</span><span><b>{user?.full_name || user?.email || 'Researcher'}</b></span></div>
@@ -509,8 +504,8 @@ function Chat() {
                 {message.content}
               </div>
               {message.role === 'assistant' && message.confidence_score !== undefined && <div className="status-pill" style={{ marginTop: 12 }}>Confidence {Math.round(message.confidence_score * 100)}%</div>}
-              {message.hallucination_flag && <div className="warning-message" style={{ marginTop: 12 }}>Review warning: the answer has lower source confidence. Check the citations carefully.</div>}
-              {message.summary && <div className="card card-pad" style={{ marginTop: 14 }}>
+              {message.role === 'assistant' && message.hallucination_flag && <div className="warning-message" style={{ marginTop: 12 }}>Review warning: the answer has lower source confidence. Check the citations carefully.</div>}
+              {message.role === 'assistant' && message.summary?.key_insights && <div className="card card-pad" style={{ marginTop: 14 }}>
                 <span className="eyebrow">Answer summary</span>
                 <p className="serif">{/* Safe by default: React escapes the summary text. */}{message.summary.short_summary}</p>
                 <ul>{message.summary.key_insights.map((insight) => <li key={insight}>{/* Safe by default: React escapes each summary insight. */}{insight}</li>)}</ul>
@@ -637,7 +632,7 @@ function StudyTools() {
   const [reviewBusy, setReviewBusy] = useState<string | null>(null);
   const readyDocs = documents.filter((doc) => doc.status === 'ready');
 
-  // Deep-link from the Overview page: /study-tools?set=<id> opens a
+  // Deep-link from the Dashboard page: /study-tools?set=<id> opens a
   // previously generated set straight into its review flow.
   useEffect(() => {
     const requestedSetId = new URLSearchParams(window.location.search).get('set');
@@ -858,7 +853,7 @@ function timeAgo(iso: string): string {
 
 const SET_KIND_LABEL: Record<string, string> = { quiz: 'Quiz', flashcards: 'Flashcards', questionnaire: 'Questionnaire' };
 
-function Overview() {
+function Dashboard() {
   const { chatSessions, setActiveSessionId } = useWorkspace();
   const [, setLocation] = useLocation();
   const [sets, setSets] = useState<StudySetSummary[]>([]);
@@ -908,7 +903,7 @@ function Overview() {
   const questionnaireCount = sets.filter((set) => set.kind === 'questionnaire').length;
 
   return <div className="page">
-    <div className="page-heading"><div><span className="eyebrow">Your desk</span><h1>Overview.</h1><p>Everything you've generated, all in one place - jump back into a chat, quiz, flashcard deck, or questionnaire.</p></div><LayoutDashboard size={26} color="var(--gold)" /></div>
+    <div className="page-heading"><div><span className="eyebrow">Your desk</span><h1>Dashboard.</h1><p>Everything you've generated, all in one place - jump back into a chat, quiz, flashcard deck, or questionnaire.</p></div><LayoutDashboard size={26} color="var(--gold)" /></div>
     {error && <p className="error-message" style={{ marginBottom: 20 }}>{error}</p>}
     <div className="grid grid-3" style={{ marginBottom: 28 }}>
       <div className="card stat-card"><span className="small muted">Chats</span><div className="stat-value">{chatSessions.length}</div><div className="stat-note">conversations saved</div></div>
@@ -941,6 +936,117 @@ function Overview() {
         <span className="small muted">Recall Queue tracks flashcard review with real spaced repetition (SM-2) - questions you find hard come back sooner.</span>
       </section>
     </div>
+  </div>;
+}
+
+function History() {
+  const { chatSessions, setActiveSessionId } = useWorkspace();
+  const [, setLocation] = useLocation();
+
+  function resumeChat(sessionId: string) {
+    setActiveSessionId(sessionId);
+    setLocation('/chat');
+  }
+
+  const sorted = [...chatSessions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  return <div className="page">
+    <div className="page-heading"><div><span className="eyebrow">Past conversations</span><h1>History.</h1><p>Every chat you've had with your library, newest first.</p></div><Clock size={26} color="var(--gold)" /></div>
+    <section className="card card-pad">
+      {sorted.length === 0
+        ? <div className="empty-state"><MessageSquare size={26} /><h3>No conversations yet</h3><p>Start a new chat to see it appear here.</p></div>
+        : <div>{sorted.map((session) => <button key={session.id} type="button" className="history-row" style={{ width: '100%', background: 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }} onClick={() => resumeChat(session.id)}>
+          <div>
+            <div className="history-row-title">{session.title || 'Untitled chat'}</div>
+            <div className="history-row-meta">{session.document_ids.length} document{session.document_ids.length === 1 ? '' : 's'}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="kind-badge chat"><MessageSquare size={11} /> Chat</span>
+            <span className="small muted">{timeAgo(session.created_at)}</span>
+          </div>
+        </button>)}</div>}
+    </section>
+  </div>;
+}
+
+function Library() {
+  const { documents, openUpload, refreshDocuments, notify } = useWorkspace();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  // Keep the selection in sync when documents are removed or refreshed elsewhere.
+  useEffect(() => {
+    setSelected((current) => current.filter((id) => documents.some((doc) => doc.id === id)));
+  }, [documents]);
+
+  function toggle(id: string) {
+    setSelected((current) => current.includes(id) ? current.filter((existing) => existing !== id) : [...current, id]);
+  }
+
+  function toggleAll() {
+    setSelected((current) => current.length === documents.length ? [] : documents.map((doc) => doc.id));
+  }
+
+  async function removeOne(id: string) {
+    setBusy(true); setError('');
+    try {
+      await client.deleteDocument(id);
+      await refreshDocuments();
+      notify('Document deleted');
+    } catch (cause) {
+      setError(apiError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeSelected() {
+    if (!selected.length || busy) return;
+    setBusy(true); setError('');
+    try {
+      // Each deletion removes the file from disk and its vector index on
+      // the backend (see documents.delete_document) - this isn't a soft
+      // hide, the PDFs are actually gone from storage.
+      const results = await Promise.allSettled(selected.map((id) => client.deleteDocument(id)));
+      const failed = results.filter((result) => result.status === 'rejected').length;
+      await refreshDocuments();
+      setSelected([]);
+      notify(failed
+        ? `Deleted ${results.length - failed} of ${results.length} document${results.length === 1 ? '' : 's'} - ${failed} failed`
+        : `${results.length} document${results.length === 1 ? '' : 's'} deleted`);
+    } catch (cause) {
+      setError(apiError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const allSelected = documents.length > 0 && selected.length === documents.length;
+
+  return <div className="page">
+    <div className="page-heading">
+      <div><span className="eyebrow">Your papers</span><h1>Library.</h1><p>Upload, browse, and remove the PDFs in your workspace. Deleting a paper permanently removes its file and search index.</p></div>
+      <div className="library-toolbar">
+        {documents.length > 0 && <button className="outline-button" onClick={toggleAll}>{allSelected ? <CheckSquare size={15} /> : <Square size={15} />} {allSelected ? 'Deselect all' : 'Select all'}</button>}
+        {selected.length > 0 && <button className="danger-button" disabled={busy} onClick={() => void removeSelected()}><Trash2 size={15} /> {busy ? 'Deleting…' : `Delete ${selected.length} selected`}</button>}
+        <button className="gold-button" onClick={openUpload}><Upload size={15} /> Upload PDFs</button>
+      </div>
+    </div>
+    {error && <p className="error-message" style={{ marginBottom: 20 }}>{error}</p>}
+    {documents.length === 0
+      ? <div className="empty-state"><FileText size={26} /><h3>No papers yet</h3><p>Upload your first PDF to start building your library.</p></div>
+      : <div className="doc-grid">{documents.map((doc) => <article key={doc.id} className={`card doc-card ${selected.includes(doc.id) ? 'selected' : ''}`}>
+          <input type="checkbox" className="selection-check" checked={selected.includes(doc.id)} onChange={() => toggle(doc.id)} aria-label={`Select ${displayName(doc)}`} />
+          <div className="doc-cover"><FileText size={30} /></div>
+          <div className="doc-card-body">
+            <span className="doc-card-title">{displayName(doc)}</span>
+            <div className="doc-card-meta"><Status doc={doc} /><span>{doc.page_count ? `${doc.page_count} page${doc.page_count === 1 ? '' : 's'}` : '—'}</span></div>
+            <div className="action-row" style={{ marginTop: 14 }}>
+              <button className="outline-button" disabled={busy} onClick={() => void removeOne(doc.id)}><Trash2 size={14} /> Delete</button>
+            </div>
+          </div>
+        </article>)}</div>}
   </div>;
 }
 
@@ -1115,11 +1221,28 @@ function ChatRoute() {
   return <Chat key={activeSessionId ?? 'new'} />;
 }
 
+function OverviewRedirect() {
+  const [, setLocation] = useLocation();
+  useEffect(() => { setLocation('/dashboard'); }, [setLocation]);
+  return null;
+}
+
 function ProtectedApp() {
   const { user, loading } = useAuth();
   if (loading) return <div className="auth-page"><div className="empty-state" style={{ margin: 'auto' }}>Restoring your research desk…</div></div>;
   if (!user) return <AuthPage mode="login" />;
-  return <WorkspaceProvider><Shell><Switch><Route path="/" component={ChatRoute} /><Route path="/chat" component={ChatRoute} /><Route path="/overview" component={Overview} /><Route path="/comparisons" component={Comparisons} /><Route path="/study-tools" component={StudyTools} /><Route path="/settings" component={Settings} /><Route component={NotFoundPage} /></Switch></Shell></WorkspaceProvider>;
+  return <WorkspaceProvider><Shell><Switch>
+    <Route path="/" component={ChatRoute} />
+    <Route path="/chat" component={ChatRoute} />
+    <Route path="/history" component={History} />
+    <Route path="/study-tools" component={StudyTools} />
+    <Route path="/comparisons" component={Comparisons} />
+    <Route path="/library" component={Library} />
+    <Route path="/dashboard" component={Dashboard} />
+    <Route path="/overview" component={OverviewRedirect} />
+    <Route path="/settings" component={Settings} />
+    <Route component={NotFoundPage} />
+  </Switch></Shell></WorkspaceProvider>;
 }
 
 function Router() {

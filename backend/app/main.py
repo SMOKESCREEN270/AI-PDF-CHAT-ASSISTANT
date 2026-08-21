@@ -4,11 +4,13 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+import logging
 
 from app.config import settings
 from app.routers import auth, documents, chat, study_tools, compare, export
 from app.rate_limit import limiter, set_byok_request, reset_byok_request
 
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME)
 app.state.limiter = limiter
@@ -20,6 +22,21 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         status_code=429,
         content={"detail": "Rate limit exceeded. Please try again later."},
         headers={"Retry-After": "60"},
+    )
+
+
+# A safety net for anything that isn't an HTTPException (a bug in a service,
+# a downstream dependency like Chroma/OpenRouter throwing an unexpected
+# shape, etc). Without this, an unhandled exception can unwind past every
+# middleware below - including CORSMiddleware - and the browser sees the
+# connection drop rather than a real response, which shows up as an opaque
+# "Failed to fetch" with no useful detail instead of a readable error.
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong processing that request. Please try again."},
     )
 
 

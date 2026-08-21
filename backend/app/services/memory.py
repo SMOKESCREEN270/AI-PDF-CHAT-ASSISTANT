@@ -122,7 +122,15 @@ def update_rolling_summary(
 
 
 def save_turn(db: Session, session_id: str, user_message: str, rag_result) -> models.ChatMessage:
-    user_msg = models.ChatMessage(session_id=session_id, role="user", content=user_message)
+    # citations/summary/highlighted_sections are assistant-only fields. Leave
+    # them as None (not the column's empty-dict/list default) on the user
+    # message - an empty dict is still truthy, and the frontend's `message.summary && ...`
+    # check would otherwise treat every reloaded user message as if it had
+    # a real summary to render, crashing on the missing nested fields.
+    user_msg = models.ChatMessage(
+        session_id=session_id, role="user", content=user_message,
+        citations=None, summary=None, highlighted_sections=None,
+    )
     db.add(user_msg)
 
     assistant_msg = models.ChatMessage(
