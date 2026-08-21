@@ -29,6 +29,7 @@ def chat_turn(request: Request, payload: schemas.ChatRequest, db: Session = Depe
     api_key = payload.user_api_key.api_key if payload.user_api_key else None
 
     session = memory.get_or_create_session(db, current_user.id, payload.session_id, payload.document_ids)
+    memory.maybe_title_session(db, session, payload.message)
     history = memory.build_history_string(db, session.id)
 
     rag_result = run_rag_turn(db, payload.document_ids, payload.message, api_key=api_key, chat_history=history)

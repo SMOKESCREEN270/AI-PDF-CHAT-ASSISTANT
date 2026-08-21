@@ -112,22 +112,26 @@ class ChatResponse(BaseModel):
 # ---------- Questionnaire ----------
 class QuestionnaireRequest(BaseModel):
     document_id: str
-    num_questions: int = 10
-    difficulty: str = "mixed"  # easy | medium | hard | mixed
+    num_questions: int = Field(default=10, ge=3, le=25)
+    difficulty: str = "mixed"  # easy | intermediate | advanced | mixed
+    # Category keys, any of: knowledge, understanding, application, analysis,
+    # evaluation, creation. Empty/omitted = spread across all categories.
+    question_types: List[str] = []
     user_api_key: Optional[UserApiKey] = None
 
 
 # ---------- Quiz / Flashcards ----------
 class QuizRequest(BaseModel):
     document_id: str
-    num_questions: int = 10
-    difficulty: str = "mixed"
+    num_questions: int = Field(default=10, ge=3, le=25)
+    difficulty: str = "mixed"  # easy | intermediate | advanced | mixed
     user_api_key: Optional[UserApiKey] = None
 
 
 class FlashcardRequest(BaseModel):
     document_id: str
-    num_cards: int = 15
+    num_cards: int = Field(default=15, ge=3, le=25)
+    difficulty: str = "mixed"  # easy | intermediate | advanced | mixed
     user_api_key: Optional[UserApiKey] = None
 
 
@@ -148,6 +152,16 @@ class DueFlashcardOut(FlashcardProgressOut):
     front: str
     back: str
     source_page: Optional[int] = None
+
+
+class StudySetSummary(BaseModel):
+    id: str
+    kind: str
+    title: str
+    document_id: str
+    document_filename: Optional[str] = None
+    item_count: int
+    created_at: datetime
 
 
 # ---------- Comparison ----------

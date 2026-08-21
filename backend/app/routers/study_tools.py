@@ -10,9 +10,20 @@ from app import models, schemas
 from app.security import get_current_user
 from app.services import questionnaire as questionnaire_service
 from app.services import quiz_flashcards
+from app.services.openrouter_client import OpenRouterError
 from app.rate_limit import authenticated_user_key, limiter, request_has_byok
 
 router = APIRouter(prefix="/api/study", tags=["study-tools"])
+
+
+def _run_generation(func, *args, **kwargs):
+    """Generation calls out to the LLM; surface a clear 502 instead of a
+    bare 500 when the provider call itself fails (bad/missing key, rate
+    limit, malformed JSON, etc.) so the frontend can show a real reason."""
+    try:
+        return func(*args, **kwargs)
+    except (OpenRouterError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=f"Generation failed: {exc}") from exc
 
 
 def _assert_owned(db: Session, document_id: str, user_id: str) -> models.Document:
@@ -31,8 +42,10 @@ def generate_questionnaire(request: Request, payload: schemas.QuestionnaireReque
                             current_user: models.User = Depends(get_current_user)):
     doc = _assert_owned(db, payload.document_id, current_user.id)
     api_key = payload.user_api_key.api_key if payload.user_api_key else None
-    items = questionnaire_service.generate_questionnaire(
-        db, payload.document_id, payload.num_questions, payload.difficulty, api_key=api_key
+    items = _run_generation(
+        questionnaire_service.generate_questionnaire,
+        db, payload.document_id, payload.num_questions, payload.difficulty,
+        question_types=payload.question_types, api_key=api_key,
     )
     record = models.QuizFlashcardSet(owner_id=current_user.id, document_id=doc.id, kind="questionnaire",
                                        title=f"Questionnaire - {doc.filename}", items=items)
@@ -48,8 +61,8 @@ def generate_quiz(request: Request, payload: schemas.QuizRequest, db: Session = 
                    current_user: models.User = Depends(get_current_user)):
     doc = _assert_owned(db, payload.document_id, current_user.id)
     api_key = payload.user_api_key.api_key if payload.user_api_key else None
-    items = quiz_flashcards.generate_quiz(db, payload.document_id, payload.num_questions,
-                                           payload.difficulty, api_key=api_key)
+    items = _run_generation(quiz_flashcards.generate_quiz, db, payload.document_id, payload.num_questions,
+                             payload.difficulty, api_key=api_key)
     record = models.QuizFlashcardSet(owner_id=current_user.id, document_id=doc.id, kind="quiz",
                                        title=f"Quiz - {doc.filename}", items=items)
     db.add(record)
@@ -64,7 +77,8 @@ def generate_flashcards(request: Request, payload: schemas.FlashcardRequest, db:
                          current_user: models.User = Depends(get_current_user)):
     doc = _assert_owned(db, payload.document_id, current_user.id)
     api_key = payload.user_api_key.api_key if payload.user_api_key else None
-    items = quiz_flashcards.generate_flashcards(db, payload.document_id, payload.num_cards, api_key=api_key)
+    items = _run_generation(quiz_flashcards.generate_flashcards, db, payload.document_id, payload.num_cards,
+                             payload.difficulty, api_key=api_key)
     items = [
         {**item, "id": item.get("id") or str(uuid.uuid4())}
         for item in items
@@ -187,6 +201,35 @@ def due_flashcards(
         }
         for progress in progress_rows
         if progress.flashcard_id in cards
+    ]
+
+
+@router.get("/sets", response_model=list[schemas.StudySetSummary])
+def list_sets(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Recent quiz/flashcard/questionnaire sets for the History / Overview views."""
+    records = (
+        db.query(models.QuizFlashcardSet)
+        .filter(models.QuizFlashcardSet.owner_id == current_user.id)
+        .order_by(models.QuizFlashcardSet.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    doc_ids = {record.document_id for record in records}
+    docs = {
+        doc.id: doc.filename
+        for doc in db.query(models.Document).filter(models.Document.id.in_(doc_ids)).all()
+    } if doc_ids else {}
+    return [
+        {
+            "id": record.id,
+            "kind": record.kind,
+            "title": record.title,
+            "document_id": record.document_id,
+            "document_filename": docs.get(record.document_id),
+            "item_count": len(record.items or []),
+            "created_at": record.created_at,
+        }
+        for record in records
     ]
 
 

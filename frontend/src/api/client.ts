@@ -77,7 +77,7 @@ export type QuizItem = {
   difficulty?: string;
   source_page?: number;
 };
-export type FlashcardItem = { id?: string; front: string; back: string; source_page?: number };
+export type FlashcardItem = { id?: string; front: string; back: string; difficulty?: string; source_page?: number };
 export type DueFlashcard = FlashcardItem & {
   flashcard_id: string;
   set_id: string;
@@ -97,6 +97,15 @@ export type ComparisonResponse = {
   dimensions: string[];
   table: Array<{ document: string; values: Record<string, string> }>;
   recommendations: Array<{ scenario: string; best_document: string; reason: string }>;
+};
+export type StudySetSummary = {
+  id: string;
+  kind: 'quiz' | 'flashcards' | 'questionnaire' | string;
+  title: string;
+  document_id: string;
+  document_filename?: string | null;
+  item_count: number;
+  created_at: string;
 };
 
 type RequestOptions = RequestInit;
@@ -207,14 +216,17 @@ export const client = {
   getSessionMessages(sessionId: string) {
     return request<ChatMessage[]>(`/chat/sessions/${encodeURIComponent(sessionId)}/messages`);
   },
-  generateQuestionnaire(payload: { document_id: string; num_questions?: number; difficulty?: string; user_api_key?: { provider: string; api_key: string } | null }) {
+  generateQuestionnaire(payload: { document_id: string; num_questions?: number; difficulty?: string; question_types?: string[]; user_api_key?: { provider: string; api_key: string } | null }) {
     return request<StudyResponse<QuestionnaireItem>>('/study/questionnaire', { method: 'POST', body: JSON.stringify(payload) });
   },
   generateQuiz(payload: { document_id: string; num_questions?: number; difficulty?: string; user_api_key?: { provider: string; api_key: string } | null }) {
     return request<StudyResponse<QuizItem>>('/study/quiz', { method: 'POST', body: JSON.stringify(payload) });
   },
-  generateFlashcards(payload: { document_id: string; num_cards?: number; user_api_key?: { provider: string; api_key: string } | null }) {
+  generateFlashcards(payload: { document_id: string; num_cards?: number; difficulty?: string; user_api_key?: { provider: string; api_key: string } | null }) {
     return request<StudyResponse<FlashcardItem>>('/study/flashcards', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  listStudySets() {
+    return request<StudySetSummary[]>('/study/sets');
   },
   reviewFlashcard(flashcardId: string, quality: number) {
     return request<{ flashcard_id: string; ease_factor: number; interval_days: number; next_review_at: string; last_reviewed_at?: string | null }>(

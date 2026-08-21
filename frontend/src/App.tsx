@@ -7,12 +7,15 @@ import {
   useState,
 } from 'react';
 import {
+  ArrowLeft,
   ArrowRight,
   BookOpen,
   Brain,
   Check,
   CircleHelp,
+  Clock,
   FileText,
+  LayoutDashboard,
   LockKeyhole,
   MessageSquare,
   Plus,
@@ -20,7 +23,6 @@ import {
   Sparkles,
   Trash2,
   Upload,
-  UserRound,
   X,
 } from 'lucide-react';
 import { Link, Route, Switch, useLocation } from 'wouter';
@@ -36,8 +38,10 @@ import {
   type FlashcardItem,
   type QuestionnaireItem,
   type QuizItem,
+  type StudySetSummary,
 } from '@/api/client';
 import { useAuth } from '@/context/AuthContext';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { Document as PdfDocument, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -78,6 +82,7 @@ function Brand() {
 }
 
 const navigation = [
+  { href: '/overview', label: 'Overview', icon: LayoutDashboard },
   { href: '/comparisons', label: 'Comparisons', icon: ArrowRight },
   { href: '/study-tools', label: 'Study Tools', icon: BookOpen },
 ];
@@ -118,7 +123,7 @@ function Shell({ children }: { children: ReactNode }) {
       </div>
     </aside>
     <main className="main-area">
-      {children}
+      <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>
     </main>
   </div>;
 }
@@ -279,6 +284,13 @@ function PdfViewer({ citation, onClose }: { citation: Citation; onClose: () => v
   </aside>;
 }
 
+const EXPORT_FORMATS: Array<{ value: string; label: string }> = [
+  { value: 'pdf', label: 'PDF' },
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'docx', label: 'Word' },
+  { value: 'json', label: 'JSON' },
+];
+
 function ExportControl({ kind, refId, data, label = 'Export' }: { kind: string; refId?: string | null; data?: Record<string, unknown>; label?: string }) {
   const { notify } = useWorkspace();
   const [format, setFormat] = useState('pdf');
@@ -305,14 +317,11 @@ function ExportControl({ kind, refId, data, label = 'Export' }: { kind: string; 
       setBusy(false);
     }
   }
-  return <div className="export-control">
-    <select className="select" aria-label={`${label} format`} value={format} onChange={(event) => setFormat(event.target.value)} disabled={!refId || busy}>
-      <option value="pdf">PDF</option>
-      <option value="docx">Word</option>
-      <option value="markdown">Markdown</option>
-      <option value="json">JSON</option>
-    </select>
-    <button className="outline-button" disabled={!refId || busy} onClick={() => void download()}>{busy ? 'Preparing…' : label}</button>
+  return <div className="export-bar" role="group" aria-label={`${label} options`}>
+    <div className="format-pills">
+      {EXPORT_FORMATS.map((option) => <button key={option.value} type="button" className={`format-pill ${format === option.value ? 'active' : ''}`} disabled={!refId || busy} aria-pressed={format === option.value} onClick={() => setFormat(option.value)}>{option.label}</button>)}
+    </div>
+    <button className="export-go-button" disabled={!refId || busy} onClick={() => void download()}>{busy && <span className="spinner spinner-sm" aria-hidden="true" />}{busy ? 'Preparing…' : label}{!busy && <ArrowRight size={14} />}</button>
     {error && <span className="error-message small">{error}</span>}
   </div>;
 }
@@ -350,17 +359,14 @@ function CombinedExportControl({ options }: { options: ExportOption[] }) {
     }
   }
 
-  return <div className="export-control">
-    {options.length > 1 && <select className="select" aria-label="What to export" value={selectedKind} onChange={(event) => setSelectedKind(event.target.value)}>
+  return <div className="export-bar" role="group" aria-label="Export options">
+    {options.length > 1 && <select className="export-bar-kind select" aria-label="What to export" value={selectedKind} onChange={(event) => setSelectedKind(event.target.value)}>
       {options.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}
     </select>}
-    <select className="select" aria-label="Export format" value={format} onChange={(event) => setFormat(event.target.value)} disabled={!refId || busy}>
-      <option value="pdf">PDF</option>
-      <option value="docx">Word</option>
-      <option value="markdown">Markdown</option>
-      <option value="json">JSON</option>
-    </select>
-    <button className="outline-button" disabled={!refId || busy} onClick={() => void download()}>{busy ? 'Preparing…' : 'Export'}</button>
+    <div className="format-pills">
+      {EXPORT_FORMATS.map((option) => <button key={option.value} type="button" className={`format-pill ${format === option.value ? 'active' : ''}`} disabled={!refId || busy} aria-pressed={format === option.value} onClick={() => setFormat(option.value)}>{option.label}</button>)}
+    </div>
+    <button className="export-go-button" disabled={!refId || busy} onClick={() => void download()}>{busy && <span className="spinner spinner-sm" aria-hidden="true" />}{busy ? 'Preparing…' : 'Export'}{!busy && <ArrowRight size={14} />}</button>
     {error && <span className="error-message small">{error}</span>}
   </div>;
 }
@@ -406,7 +412,7 @@ function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [lastResponse, setLastResponse] = useState<ChatResponse | null>(null);
   const [busy, setBusy] = useState(false);
-  const [loadingSession, setLoadingSession] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(Boolean(activeSessionId));
   const [error, setError] = useState('');
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
 
@@ -417,21 +423,12 @@ function Chat() {
     if (firstReady) setChosen([firstReady.id]);
   }, [activeSessionId, chosen.length, documents]);
 
-  // Resuming a chat picked from the sidebar: load its history and restore
-  // which documents it was scoped to. Starting a brand-new chat (activeSessionId
-  // goes back to null) clears out whatever the previous conversation left behind,
-  // instead of silently keeping the old messages/documents/citation viewer around.
+  // Load a resumed chat's history and restore which documents it was scoped
+  // to. This component is remounted (see ChatRoute's `key`) every time
+  // activeSessionId changes, so there is no leftover state from a previous
+  // conversation to reconcile here - just an initial fetch for this one id.
   useEffect(() => {
-    if (activeSessionId === sessionId) return;
-    if (!activeSessionId) {
-      setSessionId(null);
-      setMessages([]);
-      setLastResponse(null);
-      setChosen([]);
-      setActiveCitation(null);
-      setError('');
-      return;
-    }
+    if (!activeSessionId) return;
     let active = true;
     setLoadingSession(true);
     setError('');
@@ -440,19 +437,17 @@ function Chat() {
         if (!active) return;
         setMessages(history);
         setSessionId(activeSessionId);
-        setLastResponse(null);
-        setActiveCitation(null);
-        const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant');
-        void client.listSessions().then((sessions) => {
+        return client.listSessions().then((sessions) => {
+          if (!active) return;
           const match = sessions.find((s) => s.id === activeSessionId);
-          if (match && active) setChosen(match.document_ids ?? []);
+          if (match) setChosen(match.document_ids ?? []);
         });
-        void lastAssistant;
       })
       .catch((cause) => { if (active) setError(apiError(cause)); })
       .finally(() => { if (active) setLoadingSession(false); });
     return () => { active = false; };
-  }, [activeSessionId, sessionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
 
   async function send() {
     if (!input.trim() || !chosen.length || busy) return;
@@ -547,20 +542,64 @@ function Comparisons() {
   async function compare() {
     if (chosen.length < 2) { setError('Select at least two documents to compare.'); return; }
     setBusy(true); setError('');
-    try { setResult(await client.compareDocuments({ document_ids: chosen, scenario_context: scenario || undefined })); notify('Synthesis refreshed'); } catch (cause) { setError(apiError(cause)); } finally { setBusy(false); }
+    try {
+      const storedKey = sessionStorage.getItem('pdf-assistant-openrouter-key');
+      setResult(await client.compareDocuments({
+        document_ids: chosen,
+        scenario_context: scenario || undefined,
+        user_api_key: storedKey ? { provider: 'openrouter', api_key: storedKey } : null,
+      }));
+      notify('Synthesis refreshed');
+    } catch (cause) { setError(apiError(cause)); } finally { setBusy(false); }
   }
   return <div className="page">
     <div className="page-heading">
       <div><span className="eyebrow">Literature mapping</span><h1>Compare the field.</h1><p>Ask the AI to compare real excerpts from your selected documents.</p></div>
-      <div className="action-row"><button className="gold-button" disabled={busy} onClick={() => void compare()}><Sparkles size={15} /> {busy ? 'Synthesizing…' : 'Synthesize selection'}</button>{result && <ExportControl kind="comparison" refId="comparison-result" data={result as unknown as Record<string, unknown>} label="Export comparison" />}</div>
+      <div className="action-row"><button className="gold-button" disabled={busy} onClick={() => void compare()}>{busy ? <span className="spinner spinner-sm" aria-hidden="true" /> : <Sparkles size={15} />} {busy ? 'Synthesizing…' : 'Synthesize selection'}</button>{result && <ExportControl kind="comparison" refId="comparison-result" data={result as unknown as Record<string, unknown>} label="Export comparison" />}</div>
     </div>
     <div className="card card-pad" style={{ marginBottom: 28 }}>
       <div className="section-title"><h2>Select papers</h2><span className="status-pill">{chosen.length} selected</span></div>
       <div className="grid grid-2">{documents.filter((doc) => doc.status === 'ready').map((doc) => <label key={doc.id} className={`option ${chosen.includes(doc.id) ? 'selected' : ''}`}><input type="checkbox" checked={chosen.includes(doc.id)} onChange={() => setChosen((current) => current.includes(doc.id) ? current.filter((id) => id !== doc.id) : [...current, doc.id])} /> <strong>{displayName(doc)}</strong></label>)}</div>
       <label className="label" style={{ marginTop: 20 }}>Scenario context<input className="field" value={scenario} onChange={(event) => setScenario(event.target.value)} placeholder="For a beginner ML student, a thesis review, or your own context" /></label>
       {error && <p className="error-message">{error}</p>}
+      {busy && <div className="generating-panel"><span className="spinner" aria-hidden="true" /><div className="generating-copy"><strong>Synthesizing your comparison…</strong><span>This calls the AI model across every selected document, so it can take a minute or two. Feel free to wait here.</span></div></div>}
     </div>
      {result && <><section className="card card-pad accent-card"><div className="section-title"><h2>AI synthesis</h2><Sparkles size={20} color="var(--gold)" /></div><div className="table-wrap"><table className="matrix"><thead><tr><th>Dimension</th>{result.table.map((row) => <th key={row.document}>{/* Safe by default: React escapes backend-generated document labels. */}{row.document}</th>)}</tr></thead><tbody>{result.dimensions.map((dimension) => <tr key={dimension}><td>{/* Safe by default: React escapes backend-generated dimensions. */}{dimension}</td>{result.table.map((row) => <td key={`${row.document}-${dimension}`} className="serif">{/* Safe by default: React escapes backend-generated comparison values. */}{row.values[dimension] || '—'}</td>)}</tr>)}</tbody></table></div></section><section style={{ marginTop: 28 }}><h2>Recommendations</h2><div className="grid grid-2" style={{ marginTop: 16 }}>{result.recommendations.map((recommendation) => <article className="card card-pad" key={`${recommendation.scenario}-${recommendation.best_document}`}><span className="eyebrow">{/* Safe by default: React escapes backend-generated recommendation scenarios. */}{recommendation.scenario}</span><h3 style={{ marginTop: 8 }}>{/* Safe by default: React escapes backend-generated document names. */}{recommendation.best_document}</h3><p className="serif">{/* Safe by default: React escapes backend-generated recommendation text. */}{recommendation.reason}</p></article>)}</div></section></>}
+  </div>;
+}
+
+const DIFFICULTY_OPTIONS = [
+  { value: 'mixed', label: 'Mixed' },
+  { value: 'easy', label: 'Easy' },
+  { value: 'intermediate', label: 'Intermediate' },
+  { value: 'advanced', label: 'Advanced' },
+];
+
+const QUESTIONNAIRE_CATEGORIES = [
+  { key: 'knowledge', label: 'Knowledge-based', desc: 'Define, Identify, List, State' },
+  { key: 'understanding', label: 'Understanding-based', desc: 'Explain, Describe, Summarize' },
+  { key: 'application', label: 'Application-based', desc: 'Apply, Example, Scenario, Case Study' },
+  { key: 'analysis', label: 'Analysis-based', desc: 'Analyze, Compare, Differentiate, Cause & Effect' },
+  { key: 'evaluation', label: 'Evaluation-based', desc: 'Evaluate, Critically Discuss, Justify, your opinion' },
+  { key: 'creation', label: 'Creation / problem-solving', desc: 'Suggest, Recommend, Design, Propose a solution' },
+];
+
+function GeneratingPanel({ label }: { label: string }) {
+  return <div className="generating-panel">
+    <span className="spinner" aria-hidden="true" />
+    <div className="generating-copy">
+      <strong>{label}</strong>
+      <span>The AI is reading through your document and writing these from scratch, so this can take a minute or two. Feel free to stay on this page.</span>
+    </div>
+  </div>;
+}
+
+function FlowProgress({ index, total }: { index: number; total: number }) {
+  return <div className="flow-progress">
+    <span className="small muted">Question {index + 1} of {total}</span>
+    <div className="flow-dots">
+      {Array.from({ length: total }, (_, i) => <span key={i} className={`flow-dot ${i === index ? 'current' : i < index ? 'done' : ''}`} />)}
+    </div>
   </div>;
 }
 
@@ -571,15 +610,65 @@ function StudyTools() {
   const [documentId, setDocumentId] = useState('');
   const [items, setItems] = useState<Array<QuizItem | FlashcardItem | QuestionnaireItem>>([]);
   const [setId, setSetId] = useState('');
+  const [setTitle, setSetTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [flowIndex, setFlowIndex] = useState(0);
+
+  // Quiz state: an option can be picked freely, but once submitted for a
+  // given question it's locked in - no more changing your mind on a
+  // question you've already answered.
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [checked, setChecked] = useState<Record<number, boolean>>({});
+  // Flashcards: front/back flip, then a one-time Hard/Good/Easy rating.
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
+  const [rated, setRated] = useState<Record<number, boolean>>({});
+  // Questionnaire: an optional free-text attempt, then a one-time reveal.
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+
+  // Generation config.
+  const [numItems, setNumItems] = useState(8);
+  const [difficulty, setDifficulty] = useState('mixed');
+  const [questionTypes, setQuestionTypes] = useState<string[]>([]);
+
   const [dueCards, setDueCards] = useState<DueFlashcard[]>([]);
   const [dueBusy, setDueBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState<string | null>(null);
   const readyDocs = documents.filter((doc) => doc.status === 'ready');
+
+  // Deep-link from the Overview page: /study-tools?set=<id> opens a
+  // previously generated set straight into its review flow.
+  useEffect(() => {
+    const requestedSetId = new URLSearchParams(window.location.search).get('set');
+    if (!requestedSetId) return;
+    let active = true;
+    setBusy(true);
+    void client.getStudySet(requestedSetId)
+      .then((response) => {
+        if (!active) return;
+        if (response.kind === 'quiz' || response.kind === 'flashcards' || response.kind === 'questionnaire') {
+          setTab(response.kind);
+        }
+        setItems(response.items as Array<QuizItem | FlashcardItem | QuestionnaireItem>);
+        setSetId(response.set_id);
+        setSetTitle(response.title);
+        setFlowIndex(0);
+      })
+      .catch((cause) => { if (active) setError(apiError(cause)); })
+      .finally(() => { if (active) setBusy(false); });
+    return () => { active = false; };
+  }, []);
+
+  function resetFlowState() {
+    setAnswers({}); setChecked({}); setFlipped({}); setRated({}); setDrafts({}); setRevealed({});
+    setFlowIndex(0);
+  }
+
+  function switchTab(key: typeof tab) {
+    setView('generator'); setTab(key); setItems([]); setSetId(''); setSetTitle('');
+    resetFlowState();
+  }
 
   async function loadDueCards() {
     setDueBusy(true);
@@ -612,17 +701,16 @@ function StudyTools() {
     }
     setBusy(true);
     setError('');
-    setAnswers({});
-    setChecked({});
-    setFlipped({});
+    resetFlowState();
+    setSetTitle('');
     try {
       const key = sessionStorage.getItem('pdf-assistant-openrouter-key');
       const auth = key ? { provider: 'openrouter', api_key: key } : null;
       const response = tab === 'quiz'
-        ? await client.generateQuiz({ document_id: documentId, num_questions: 8, user_api_key: auth })
+        ? await client.generateQuiz({ document_id: documentId, num_questions: numItems, difficulty, user_api_key: auth })
         : tab === 'flashcards'
-          ? await client.generateFlashcards({ document_id: documentId, num_cards: 10, user_api_key: auth })
-          : await client.generateQuestionnaire({ document_id: documentId, num_questions: 8, user_api_key: auth });
+          ? await client.generateFlashcards({ document_id: documentId, num_cards: numItems, difficulty, user_api_key: auth })
+          : await client.generateQuestionnaire({ document_id: documentId, num_questions: numItems, difficulty, question_types: questionTypes, user_api_key: auth });
       setItems(response.items);
       setSetId(response.set_id);
     } catch (cause) {
@@ -632,18 +720,42 @@ function StudyTools() {
     }
   }
 
+  function toggleQuestionType(key: string) {
+    setQuestionTypes((current) => current.includes(key) ? current.filter((k) => k !== key) : [...current, key]);
+  }
+
+  const quizItems = items as QuizItem[];
+  const flashcardItems = items as FlashcardItem[];
+  const questionnaireItems = items as QuestionnaireItem[];
+  const total = items.length;
+  const atLastItem = flowIndex >= total - 1;
+
   return <div className="page">
     <div className="page-heading"><div><span className="eyebrow">Active recall studio</span><h1>Study with intention.</h1><p>Generate exercises from a real uploaded document and keep scoring in this session.</p></div><Brain size={26} color="var(--gold)" /></div>
     <div className="tool-tabs">
-      {(['quiz', 'flashcards', 'questionnaire'] as const).map((key) => <button key={key} className={`tool-tab ${view === 'generator' && tab === key ? 'active' : ''}`} onClick={() => { setView('generator'); setTab(key); setItems([]); setSetId(''); }}>{key[0].toUpperCase() + key.slice(1)}</button>)}
-      <button className={`tool-tab ${view === 'due' ? 'active' : ''}`} onClick={() => { setView('due'); void loadDueCards(); }}>Due for review {dueCards.length > 0 && <span className="status-pill">{dueCards.length}</span>}</button>
+      {(['quiz', 'flashcards', 'questionnaire'] as const).map((key) => <button key={key} className={`tool-tab ${view === 'generator' && tab === key ? 'active' : ''}`} onClick={() => switchTab(key)}>{key[0].toUpperCase() + key.slice(1)}</button>)}
+      <button className={`tool-tab ${view === 'due' ? 'active' : ''}`} onClick={() => { setView('due'); void loadDueCards(); }}>Recall Queue {dueCards.length > 0 && <span className="status-pill">{dueCards.length}</span>}</button>
     </div>
-    {view === 'generator' && <div className="card card-pad" style={{ marginBottom: 24 }}>
-      <div className="action-row"><label className="label" style={{ flex: 1 }}>Source document<select className="select" value={documentId} onChange={(event) => setDocumentId(event.target.value)}><option value="">Choose a ready document</option>{readyDocs.map((doc) => <option key={doc.id} value={doc.id}>{displayName(doc)}</option>)}</select></label><button className="gold-button" disabled={busy} onClick={() => void generate()}>{busy ? 'Generating…' : 'Generate set'} <ArrowRight size={15} /></button></div>
+    {view === 'generator' && <div className="card card-pad gen-config" style={{ marginBottom: 24 }}>
+      <label className="label">Source document<select className="select" value={documentId} onChange={(event) => setDocumentId(event.target.value)}><option value="">Choose a ready document</option>{readyDocs.map((doc) => <option key={doc.id} value={doc.id}>{displayName(doc)}</option>)}</select></label>
+      <div className="gen-config-row">
+        <label className="label">Number of {tab === 'flashcards' ? 'cards' : 'questions'}
+          <div className="count-control"><input type="range" min={3} max={25} value={numItems} onChange={(event) => setNumItems(Number(event.target.value))} /><span className="count-value">{numItems}</span></div>
+        </label>
+        <label className="label">Difficulty
+          <div className="pill-select">{DIFFICULTY_OPTIONS.map((option) => <button key={option.value} type="button" className={difficulty === option.value ? 'active' : ''} onClick={() => setDifficulty(option.value)}>{option.label}</button>)}</div>
+        </label>
+      </div>
+      {tab === 'questionnaire' && <div>
+        <span className="label">Question types <span style={{ textTransform: 'none', fontWeight: 400 }}>(none selected = spread across all)</span></span>
+        <div className="category-grid">{QUESTIONNAIRE_CATEGORIES.map((category) => <label key={category.key} className="category-check"><input type="checkbox" checked={questionTypes.includes(category.key)} onChange={() => toggleQuestionType(category.key)} /><span><strong>{category.label}</strong><small>{category.desc}</small></span></label>)}</div>
+      </div>}
+      <div className="action-row"><button className="gold-button" disabled={busy} onClick={() => void generate()}>{busy && <span className="spinner spinner-sm" aria-hidden="true" />}{busy ? 'Generating…' : 'Generate set'} {!busy && <ArrowRight size={15} />}</button></div>
       {error && <p className="error-message">{error}</p>}
+      {busy && <GeneratingPanel label={`Building your ${tab}…`} />}
     </div>}
     {view === 'due' && <section>
-      <div className="section-title"><div><span className="eyebrow">Spaced repetition</span><h2>Due for review</h2></div><button className="outline-button" disabled={dueBusy} onClick={() => void loadDueCards()}>{dueBusy ? 'Refreshing…' : 'Refresh'}</button></div>
+      <div className="section-title"><div><span className="eyebrow">Spaced repetition</span><h2>Recall Queue</h2></div><button className="outline-button" disabled={dueBusy} onClick={() => void loadDueCards()}>{dueBusy ? 'Refreshing…' : 'Refresh'}</button></div>
       {error && <p className="error-message">{error}</p>}
       {dueBusy && !dueCards.length ? <div className="empty-state">Loading cards due now…</div> : dueCards.length ? <div className="grid grid-2">{dueCards.map((card) => <article className="card card-pad" key={card.flashcard_id}>
         <span className="eyebrow">Review card</span>
@@ -652,28 +764,183 @@ function StudyTools() {
         <div className="action-row" style={{ marginTop: 18 }}><button className="outline-button" disabled={reviewBusy === card.flashcard_id} onClick={() => void reviewCard(card.flashcard_id, 2)}>Hard</button><button className="outline-button" disabled={reviewBusy === card.flashcard_id} onClick={() => void reviewCard(card.flashcard_id, 4)}>Good</button><button className="gold-button" disabled={reviewBusy === card.flashcard_id} onClick={() => void reviewCard(card.flashcard_id, 5)}>Easy</button></div>
       </article>)}</div> : <div className="empty-state"><Check size={26} /><h3>Nothing due right now</h3><p>Generate flashcards or check back after your next review interval.</p></div>}
     </section>}
-    {setId && <div className="action-row" style={{ margin: '15px 0' }}><p className="small muted">Set {setId.slice(0, 8)} · {items.length} generated items</p><ExportControl kind={tab} refId={setId} label={`Export ${tab}`} /></div>}
-    {view === 'generator' && tab === 'quiz' && <div className="grid grid-2">{(items as QuizItem[]).map((item, index) => <section className="card card-pad" key={`${item.question}-${index}`}>
-      <span className="eyebrow">Question {index + 1}</span>
-      <h3 style={{ margin: '10px 0 15px' }}>{/* Safe by default: React escapes quiz questions. */}{item.question}</h3>
-      <div style={{ display: 'grid', gap: 9 }}>{item.options.map((option, optionIndex) => <button key={option} className={`option ${answers[index] === optionIndex ? 'selected' : ''}`} onClick={() => setAnswers((current) => ({ ...current, [index]: optionIndex }))}>{/* Safe by default: React escapes quiz options. */}{option}{answers[index] === optionIndex && <Check size={16} style={{ float: 'right', color: 'var(--gold-deep)' }} />}</button>)}</div>
-      <button className="gold-button" style={{ marginTop: 15 }} disabled={answers[index] === undefined} onClick={() => setChecked((current) => ({ ...current, [index]: true }))}>Check answer</button>
-      {checked[index] && <p className={answers[index] === item.correct_index ? 'success-message' : 'error-message'}>{answers[index] === item.correct_index ? 'Correct.' : `Not quite. Correct answer: ${item.options[item.correct_index]}`} {/* Safe by default: React escapes quiz explanations. */}{item.explanation}</p>}
-    </section>)}</div>}
-    {view === 'generator' && tab === 'flashcards' && <div className="grid grid-2">{(items as FlashcardItem[]).map((item, index) => <article className="card card-pad" key={`${item.id || item.front}-${index}`}>
-      <button className="flashcard-face" onClick={() => setFlipped((current) => ({ ...current, [index]: !current[index] }))}>
-        <span className="eyebrow">{flipped[index] ? 'Answer' : 'Prompt'} · Card {index + 1}</span>
-        <h3 style={{ marginTop: 18 }}>{/* Safe by default: React escapes flashcard front/back content. */}{flipped[index] ? item.back : item.front}</h3>
-        <span className="small muted" style={{ display: 'block', marginTop: 18 }}>Click to {flipped[index] ? 'show prompt' : 'reveal answer'}</span>
-      </button>
-      {flipped[index] && item.id && <div className="action-row" style={{ marginTop: 18 }}><button className="outline-button" disabled={reviewBusy === item.id} onClick={() => void reviewCard(item.id!, 2)}>Hard</button><button className="outline-button" disabled={reviewBusy === item.id} onClick={() => void reviewCard(item.id!, 4)}>Good</button><button className="gold-button" disabled={reviewBusy === item.id} onClick={() => void reviewCard(item.id!, 5)}>Easy</button></div>}
-    </article>)}</div>}
-    {view === 'generator' && tab === 'questionnaire' && <div className="grid grid-2">{(items as QuestionnaireItem[]).map((item, index) => <article className="card card-pad" key={`${item.question}-${index}`}>
-      <span className="eyebrow">{item.type} · Question {index + 1}</span>
-      <h3 style={{ marginTop: 10 }}>{/* Safe by default: React escapes questionnaire questions. */}{item.question}</h3>
-      <p className="summary-copy">{/* Safe by default: React escapes model answers. */}{item.model_answer}</p>
-      <span className="small muted">Source page: {item.source_page ?? '—'}</span>
-    </article>)}</div>}
+    {setId && total > 0 && <div className="action-row" style={{ margin: '15px 0' }}><p className="small muted">{setTitle || `Set ${setId.slice(0, 8)}`} · {total} generated items</p><ExportControl kind={tab} refId={setId} label={`Export ${tab}`} /></div>}
+
+    {view === 'generator' && tab === 'quiz' && total > 0 && <div className="card card-pad flow-card">
+      <FlowProgress index={flowIndex} total={total} />
+      {(() => {
+        const item = quizItems[flowIndex];
+        const index = flowIndex;
+        const isChecked = Boolean(checked[index]);
+        return <section key={index}>
+          <h3 style={{ margin: '0 0 15px' }}>{/* Safe by default: React escapes quiz questions. */}{item.question}</h3>
+          <div style={{ display: 'grid', gap: 9 }}>{item.options.map((option, optionIndex) => {
+            const isSelected = answers[index] === optionIndex;
+            const isCorrectOption = optionIndex === item.correct_index;
+            const stateClass = isChecked ? (isCorrectOption ? 'correct' : (isSelected ? 'incorrect' : '')) : (isSelected ? 'selected' : '');
+            return <button key={option} className={`option answer-option ${stateClass}`} disabled={isChecked} onClick={() => setAnswers((current) => ({ ...current, [index]: optionIndex }))}>{/* Safe by default: React escapes quiz options. */}{option}{isSelected && <Check size={16} style={{ float: 'right', color: 'var(--gold-deep)' }} />}</button>;
+          })}</div>
+          {!isChecked
+            ? <button className="gold-button" style={{ marginTop: 15 }} disabled={answers[index] === undefined} onClick={() => setChecked((current) => ({ ...current, [index]: true }))}>Submit answer <ArrowRight size={15} /></button>
+            : <p className={answers[index] === item.correct_index ? 'success-message' : 'error-message'} style={{ marginTop: 15 }}>{answers[index] === item.correct_index ? 'Correct.' : `Not quite. Correct answer: ${item.options[item.correct_index]}`} {/* Safe by default: React escapes quiz explanations. */}{item.explanation}</p>}
+          <div className="flow-nav">
+            <button className="outline-button" disabled={flowIndex === 0} onClick={() => setFlowIndex((i) => Math.max(0, i - 1))}><ArrowLeft size={15} /> Previous</button>
+            {!atLastItem && <button className="outline-button" disabled={!isChecked} onClick={() => setFlowIndex((i) => Math.min(total - 1, i + 1))}>Next question <ArrowRight size={15} /></button>}
+          </div>
+        </section>;
+      })()}
+    </div>}
+
+    {view === 'generator' && tab === 'flashcards' && total > 0 && <div className="card card-pad flow-card">
+      <FlowProgress index={flowIndex} total={total} />
+      {(() => {
+        const item = flashcardItems[flowIndex];
+        const index = flowIndex;
+        const isFlipped = Boolean(flipped[index]);
+        const isRated = Boolean(rated[index]);
+        return <article key={index}>
+          <button className="flashcard-face" onClick={() => setFlipped((current) => ({ ...current, [index]: !current[index] }))}>
+            <span className="eyebrow">{isFlipped ? 'Answer' : 'Prompt'}</span>
+            <h3 style={{ marginTop: 18 }}>{/* Safe by default: React escapes flashcard front/back content. */}{isFlipped ? item.back : item.front}</h3>
+            <span className="small muted" style={{ display: 'block', marginTop: 18 }}>Click to {isFlipped ? 'show prompt' : 'reveal answer'}</span>
+          </button>
+          {isFlipped && item.id && <div className="action-row" style={{ marginTop: 18 }}>
+            <button className="outline-button" disabled={isRated} onClick={() => { setRated((current) => ({ ...current, [index]: true })); void reviewCard(item.id!, 2); }}>Hard</button>
+            <button className="outline-button" disabled={isRated} onClick={() => { setRated((current) => ({ ...current, [index]: true })); void reviewCard(item.id!, 4); }}>Good</button>
+            <button className="gold-button" disabled={isRated} onClick={() => { setRated((current) => ({ ...current, [index]: true })); void reviewCard(item.id!, 5); }}>Easy</button>
+          </div>}
+          {isRated && <p className="success-message" style={{ marginTop: 15 }}>Rating saved - it'll come back around based on how you did.</p>}
+          <div className="flow-nav">
+            <button className="outline-button" disabled={flowIndex === 0} onClick={() => setFlowIndex((i) => Math.max(0, i - 1))}><ArrowLeft size={15} /> Previous</button>
+            {!atLastItem && <button className="outline-button" disabled={!isFlipped} onClick={() => setFlowIndex((i) => Math.min(total - 1, i + 1))}>Next card <ArrowRight size={15} /></button>}
+          </div>
+        </article>;
+      })()}
+    </div>}
+
+    {view === 'generator' && tab === 'questionnaire' && total > 0 && <div className="card card-pad flow-card">
+      <FlowProgress index={flowIndex} total={total} />
+      {(() => {
+        const item = questionnaireItems[flowIndex];
+        const index = flowIndex;
+        const isRevealed = Boolean(revealed[index]);
+        return <article key={index}>
+          <span className="eyebrow">{item.type}{item.difficulty ? ` · ${item.difficulty}` : ''}</span>
+          <h3 style={{ marginTop: 10 }}>{/* Safe by default: React escapes questionnaire questions. */}{item.question}</h3>
+          <label className="label reveal-textarea">Your answer (optional)
+            <textarea className="textarea" disabled={isRevealed} value={drafts[index] ?? ''} onChange={(event) => setDrafts((current) => ({ ...current, [index]: event.target.value }))} placeholder="Jot down your own answer before checking the model answer…" />
+          </label>
+          {!isRevealed
+            ? <button className="gold-button" onClick={() => setRevealed((current) => ({ ...current, [index]: true }))}>Submit &amp; reveal model answer <ArrowRight size={15} /></button>
+            : <div className="model-answer-block"><span className="eyebrow">Model answer</span><p className="summary-copy" style={{ marginTop: 8 }}>{/* Safe by default: React escapes model answers. */}{item.model_answer}</p><span className="small muted">Source page: {item.source_page ?? '—'}</span></div>}
+          <div className="flow-nav">
+            <button className="outline-button" disabled={flowIndex === 0} onClick={() => setFlowIndex((i) => Math.max(0, i - 1))}><ArrowLeft size={15} /> Previous</button>
+            {!atLastItem && <button className="outline-button" disabled={!isRevealed} onClick={() => setFlowIndex((i) => Math.min(total - 1, i + 1))}>Next question <ArrowRight size={15} /></button>}
+          </div>
+        </article>;
+      })()}
+    </div>}
+  </div>;
+}
+
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const diffMinutes = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (diffMinutes < 1) return 'just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+const SET_KIND_LABEL: Record<string, string> = { quiz: 'Quiz', flashcards: 'Flashcards', questionnaire: 'Questionnaire' };
+
+function Overview() {
+  const { chatSessions, setActiveSessionId } = useWorkspace();
+  const [, setLocation] = useLocation();
+  const [sets, setSets] = useState<StudySetSummary[]>([]);
+  const [dueCount, setDueCount] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    void Promise.all([
+      client.listStudySets().catch(() => [] as StudySetSummary[]),
+      client.getDueFlashcards().catch(() => [] as DueFlashcard[]),
+    ]).then(([setList, due]) => {
+      if (!active) return;
+      setSets(setList);
+      setDueCount(due.length);
+    }).catch((cause) => { if (active) setError(apiError(cause)); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  function resumeChat(sessionId: string) {
+    setActiveSessionId(sessionId);
+    setLocation('/chat');
+  }
+  function openSet(setId: string) {
+    setLocation(`/study-tools?set=${encodeURIComponent(setId)}`);
+  }
+
+  type ActivityRow = { key: string; kind: 'chat' | 'quiz' | 'flashcards' | 'questionnaire'; title: string; meta: string; createdAt: string; onOpen: () => void };
+  const activity: ActivityRow[] = [
+    ...chatSessions.map((session): ActivityRow => ({
+      key: `chat-${session.id}`, kind: 'chat', title: session.title || 'Untitled chat',
+      meta: `${session.document_ids.length} document${session.document_ids.length === 1 ? '' : 's'}`,
+      createdAt: session.created_at, onOpen: () => resumeChat(session.id),
+    })),
+    ...sets.map((set): ActivityRow => ({
+      key: `set-${set.id}`, kind: set.kind as ActivityRow['kind'], title: set.title || `${SET_KIND_LABEL[set.kind] || set.kind} set`,
+      meta: `${set.item_count} item${set.item_count === 1 ? '' : 's'}${set.document_filename ? ` · ${set.document_filename}` : ''}`,
+      createdAt: set.created_at, onOpen: () => openSet(set.id),
+    })),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const quizCount = sets.filter((set) => set.kind === 'quiz').length;
+  const flashcardSetCount = sets.filter((set) => set.kind === 'flashcards').length;
+  const questionnaireCount = sets.filter((set) => set.kind === 'questionnaire').length;
+
+  return <div className="page">
+    <div className="page-heading"><div><span className="eyebrow">Your desk</span><h1>Overview.</h1><p>Everything you've generated, all in one place - jump back into a chat, quiz, flashcard deck, or questionnaire.</p></div><LayoutDashboard size={26} color="var(--gold)" /></div>
+    {error && <p className="error-message" style={{ marginBottom: 20 }}>{error}</p>}
+    <div className="grid grid-3" style={{ marginBottom: 28 }}>
+      <div className="card stat-card"><span className="small muted">Chats</span><div className="stat-value">{chatSessions.length}</div><div className="stat-note">conversations saved</div></div>
+      <div className="card stat-card"><span className="small muted">Study sets</span><div className="stat-value">{sets.length}</div><div className="stat-note">{quizCount} quiz · {flashcardSetCount} flashcard · {questionnaireCount} questionnaire</div></div>
+      <div className="card stat-card"><span className="small muted">Due for review</span><div className="stat-value">{dueCount ?? '—'}</div><div className="stat-note"><Link href="/study-tools" className="gold-link">Open Recall Queue</Link></div></div>
+    </div>
+    <div className="overview-grid">
+      <section className="card card-pad">
+        <div className="section-title"><h2>Recent activity</h2></div>
+        {loading ? <div className="empty-state">Loading your recent work…</div>
+          : activity.length === 0 ? <div className="empty-state"><Clock size={26} /><h3>Nothing yet</h3><p>Start a chat or generate a study set to see it appear here.</p></div>
+          : <div>{activity.slice(0, 20).map((row) => <button key={row.key} type="button" className="history-row" style={{ width: '100%', background: 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }} onClick={row.onOpen}>
+            <div>
+              <div className="history-row-title">{row.title}</div>
+              <div className="history-row-meta">{row.meta}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className={`kind-badge ${row.kind}`}>{row.kind === 'chat' ? <MessageSquare size={11} /> : <BookOpen size={11} />} {row.kind === 'chat' ? 'Chat' : SET_KIND_LABEL[row.kind] || row.kind}</span>
+              <span className="small muted">{timeAgo(row.createdAt)}</span>
+            </div>
+          </button>)}</div>}
+      </section>
+      <section className="card card-pad">
+        <div className="section-title"><h2>Study tools</h2></div>
+        <div className="grid" style={{ gap: 10 }}>
+          <Link href="/study-tools" className="outline-button" style={{ justifyContent: 'space-between' }}><span><Brain size={15} style={{ marginRight: 8 }} />Generate a new set</span><ArrowRight size={14} /></Link>
+          <Link href="/comparisons" className="outline-button" style={{ justifyContent: 'space-between' }}><span><FileText size={15} style={{ marginRight: 8 }} />Compare documents</span><ArrowRight size={14} /></Link>
+        </div>
+        <div className="rule" style={{ margin: '20px 0' }} />
+        <span className="small muted">Recall Queue tracks flashcard review with real spaced repetition (SM-2) - questions you find hard come back sooner.</span>
+      </section>
+    </div>
   </div>;
 }
 
@@ -839,11 +1106,20 @@ function NotFoundPage() {
   return <div className="empty-state" style={{ margin: 50 }}><CircleHelp size={30} /><h1>Page not found</h1><Link className="gold-button" href="/">Return home</Link></div>;
 }
 
+function ChatRoute() {
+  const { activeSessionId } = useWorkspace();
+  // Remount Chat entirely on every session switch (including back to a
+  // brand-new chat) instead of reconciling six pieces of local state by
+  // hand - this is what keeps a previous conversation's state from ever
+  // leaking into the next one.
+  return <Chat key={activeSessionId ?? 'new'} />;
+}
+
 function ProtectedApp() {
   const { user, loading } = useAuth();
   if (loading) return <div className="auth-page"><div className="empty-state" style={{ margin: 'auto' }}>Restoring your research desk…</div></div>;
   if (!user) return <AuthPage mode="login" />;
-  return <WorkspaceProvider><Shell><Switch><Route path="/" component={Chat} /><Route path="/chat" component={Chat} /><Route path="/comparisons" component={Comparisons} /><Route path="/study-tools" component={StudyTools} /><Route path="/settings" component={Settings} /><Route component={NotFoundPage} /></Switch></Shell></WorkspaceProvider>;
+  return <WorkspaceProvider><Shell><Switch><Route path="/" component={ChatRoute} /><Route path="/chat" component={ChatRoute} /><Route path="/overview" component={Overview} /><Route path="/comparisons" component={Comparisons} /><Route path="/study-tools" component={StudyTools} /><Route path="/settings" component={Settings} /><Route component={NotFoundPage} /></Switch></Shell></WorkspaceProvider>;
 }
 
 function Router() {

@@ -183,3 +183,90 @@ def test_due_flashcards_only_include_passed_review_dates(client):
     due_after_review = client.get("/api/study/flashcards/due", headers=headers)
     assert due_after_review.status_code == 200
     assert due_after_review.json() == []
+
+
+def test_new_chat_session_is_titled_from_first_message():
+    """Sessions used to stay labelled 'New Chat' forever; the first turn
+    should now give the session a real title, Claude-style."""
+    from app.services import memory as memory_service
+
+    with SessionLocal() as db:
+        session = models.ChatSession(owner_id=str(uuid.uuid4()), document_ids=[])
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        assert session.title == "New Chat"
+
+        memory_service.maybe_title_session(db, session, "  What does section 3 say about risk?  ")
+        db.commit()
+        db.refresh(session)
+        assert session.title == "What does section 3 say about risk?"
+
+        # A second turn must never overwrite the title that was already set.
+        memory_service.maybe_title_session(db, session, "Follow-up question")
+        db.commit()
+        db.refresh(session)
+        assert session.title == "What does section 3 say about risk?"
+
+
+def test_study_sets_endpoint_lists_recent_sets_with_document_name(client):
+    user = register(client)
+    headers = login(client)
+    with SessionLocal() as db:
+        document = models.Document(
+            owner_id=user["id"], filename="thesis.pdf", filepath="/tmp/thesis.pdf",
+            collection_name="doc-thesis", status="ready",
+        )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        quiz_set = models.QuizFlashcardSet(
+            owner_id=user["id"], document_id=document.id, kind="quiz", title="Chapter 3 quiz",
+            items=[{"question": "Q1"}, {"question": "Q2"}],
+        )
+        db.add(quiz_set)
+        db.commit()
+
+    response = client.get("/api/study/sets", headers=headers)
+    assert response.status_code == 200
+    sets = response.json()
+    assert len(sets) == 1
+    assert sets[0]["kind"] == "quiz"
+    assert sets[0]["title"] == "Chapter 3 quiz"
+    assert sets[0]["item_count"] == 2
+    assert sets[0]["document_filename"] == "thesis.pdf"
+
+
+def test_study_sets_endpoint_only_returns_the_current_users_sets(client):
+    owner = register(client, "owner@example.com")
+    register(client, "other@example.com")
+    other_headers = login(client, "other@example.com")
+    with SessionLocal() as db:
+        document = models.Document(
+            owner_id=owner["id"], filename="private.pdf", filepath="/tmp/private2.pdf",
+            collection_name="doc-private2", status="ready",
+        )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        db.add(models.QuizFlashcardSet(
+            owner_id=owner["id"], document_id=document.id, kind="flashcards", title="Private set", items=[],
+        ))
+        db.commit()
+
+    response = client.get("/api/study/sets", headers=other_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_questionnaire_category_instruction_defaults_to_all_categories():
+    from app.services.questionnaire import _category_instruction, CATEGORY_VERBS
+
+    everything = _category_instruction([])
+    for key, (label, _verbs) in CATEGORY_VERBS.items():
+        assert label in everything
+
+    scoped = _category_instruction(["analysis", "evaluation", "not-a-real-category"])
+    assert CATEGORY_VERBS["analysis"][0] in scoped
+    assert CATEGORY_VERBS["evaluation"][0] in scoped
+    assert CATEGORY_VERBS["knowledge"][0] not in scoped

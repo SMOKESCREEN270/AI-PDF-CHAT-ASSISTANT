@@ -232,6 +232,69 @@ h3 { font-size: 20px; }
 .status-processing { color: #765713; background: #fff1c7; }
 .status-failed { color: #8d4038; background: #f8e3df; }
 
+/* ---- Export control: colored, clickable format pills + a primary action ---- */
+.export-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: #fbf3df; }
+.export-bar-kind { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 6px; padding: 0 12px; min-height: 38px; }
+.format-pills { display: inline-flex; gap: 4px; padding: 3px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+.format-pill { min-height: 32px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--ink-soft); font-size: 12px; font-weight: 700; letter-spacing: .04em; transition: background .18s, color .18s, box-shadow .18s; }
+.format-pill:hover { color: var(--gold-deep); background: var(--cream-deep); }
+.format-pill.active { background: var(--gold); color: var(--cream); box-shadow: 0 4px 10px rgba(193,150,44,.28); }
+.format-pill.active:hover { background: var(--gold-deep); color: var(--cream); }
+.export-go-button { min-height: 38px; padding: 0 20px; border: 0; border-radius: 6px; background: var(--gold); color: var(--cream); font-weight: 700; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 6px 14px rgba(193,150,44,.25); transition: background .18s, transform .18s; }
+.export-go-button:hover:not(:disabled) { background: var(--gold-deep); transform: translateY(-1px); }
+.export-go-button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- Generation config panel (count / difficulty / question types) ---- */
+.gen-config { display: grid; gap: 20px; }
+.gen-config-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+.count-control { display: flex; align-items: center; gap: 14px; }
+.count-control input[type="range"] { flex: 1; accent-color: var(--gold); }
+.count-value { min-width: 34px; text-align: center; font-family: var(--app-font-display); font-size: 18px; color: var(--gold-deep); }
+.pill-select { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill-select button { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-soft); border-radius: 20px; font-size: 13px; transition: background .18s, border .18s, color .18s; }
+.pill-select button:hover { border-color: var(--gold-muted); }
+.pill-select button.active { background: var(--gold); border-color: var(--gold); color: var(--cream); font-weight: 700; }
+.category-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.category-check { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); font-size: 13px; }
+.category-check:has(input:checked) { border-color: var(--gold); background: #f5ebd2; }
+.category-check input { margin-top: 3px; accent-color: var(--gold); }
+.category-check span small { display: block; color: var(--ink-soft); font-size: 11px; margin-top: 2px; }
+
+/* ---- Generation loading state ---- */
+.generating-panel { display: flex; align-items: center; gap: 16px; padding: 20px 22px; border: 1px solid var(--gold-muted); border-radius: 10px; background: #fdf6e3; margin-top: 18px; }
+.spinner { width: 26px; height: 26px; flex-shrink: 0; border: 3px solid #e6d9ba; border-top-color: var(--gold); border-radius: 50%; animation: spin .8s linear infinite; }
+.spinner-sm { width: 15px; height: 15px; border-width: 2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.generating-copy strong { display: block; font-size: 15px; color: var(--gold-deep); }
+.generating-copy span { color: var(--ink-soft); font-size: 13px; }
+
+/* ---- One-at-a-time question flow ---- */
+.flow-card { max-width: 720px; margin: 0 auto; }
+.flow-progress { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.flow-dots { display: flex; gap: 6px; flex-wrap: wrap; }
+.flow-dot { width: 9px; height: 9px; border-radius: 50%; background: #e6d9ba; }
+.flow-dot.current { background: var(--gold-deep); transform: scale(1.3); }
+.flow-dot.done { background: var(--gold); }
+.flow-nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 22px; }
+.answer-option { position: relative; }
+.answer-option.correct { border-color: #6f9c66; background: #e4f0df; }
+.answer-option.incorrect { border-color: #b96b5e; background: #f8e3df; }
+.answer-option:disabled, .option:disabled { cursor: not-allowed; }
+.reveal-textarea { margin: 14px 0; }
+.model-answer-block { margin-top: 16px; padding: 16px; border-radius: 8px; background: #f8f0db; border: 1px solid #e6d9ba; }
+
+/* ---- Overview / history ---- */
+.overview-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; align-items: start; }
+.history-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 6px; border-bottom: 1px solid var(--line); }
+.history-row:last-child { border-bottom: 0; }
+.history-row-title { font-weight: 600; font-size: 14px; }
+.history-row-meta { color: var(--ink-soft); font-size: 12px; margin-top: 2px; }
+.kind-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 20px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+.kind-badge.quiz { background: #eadcf5; color: #6a3f8c; }
+.kind-badge.flashcards { background: #d9ecf5; color: #2c6a8c; }
+.kind-badge.questionnaire { background: #f5e3d9; color: #8c5a2c; }
+.kind-badge.chat { background: #e4f0df; color: #45634b; }
+
 @media (max-width: 1050px) {
   .sidebar { width: 218px; }
   .main-area { margin-left: 218px; }
@@ -269,4 +332,6 @@ h3 { font-size: 20px; }
   .auth-art p { font-size: 18px; }
   .timeline-item { grid-template-columns: 1fr; gap: 5px; }
   .profile-hero { align-items: flex-start; flex-direction: column; }
+  .overview-grid { grid-template-columns: 1fr; }
+  .gen-config-row { grid-template-columns: 1fr; }
 }

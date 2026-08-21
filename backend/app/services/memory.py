@@ -35,6 +35,21 @@ def get_or_create_session(db: Session, owner_id: str, session_id: str = None,
     return session
 
 
+def maybe_title_session(db: Session, session: "models.ChatSession", first_message: str) -> None:
+    """Give a new session a real title from its first message, Claude-style,
+    instead of leaving every session labelled with the generic default. Only
+    fires once - on the very first turn - so it never overwrites a title a
+    later feature (or the user) sets explicitly."""
+    if session.title and session.title != "New Chat":
+        return
+    cleaned = " ".join((first_message or "").split())
+    if not cleaned:
+        return
+    title = cleaned if len(cleaned) <= 60 else cleaned[:57].rstrip() + "..."
+    session.title = title
+    db.add(session)
+
+
 def build_history_string(db: Session, session_id: str) -> str:
     session = db.query(models.ChatSession).filter(models.ChatSession.id == session_id).first()
     messages = (

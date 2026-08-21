@@ -5,6 +5,7 @@ from app.database import get_db
 from app import models, schemas
 from app.security import get_current_user
 from app.services import comparison as comparison_service
+from app.services.openrouter_client import OpenRouterError
 from app.rate_limit import authenticated_user_key, limiter, request_has_byok
 
 router = APIRouter(prefix="/api/compare", tags=["compare"])
@@ -25,5 +26,12 @@ def compare_documents(request: Request, payload: schemas.CompareRequest, db: Ses
         raise HTTPException(status_code=404, detail="One or more documents not found")
 
     api_key = payload.user_api_key.api_key if payload.user_api_key else None
-    result = comparison_service.compare_documents(db, payload.document_ids, payload.scenario_context, api_key=api_key)
+    try:
+        result = comparison_service.compare_documents(db, payload.document_ids, payload.scenario_context,
+                                                        api_key=api_key)
+    except (OpenRouterError, RuntimeError, ValueError) as exc:
+        # Most commonly hit when no BYOK key was supplied and the shared
+        # platform default key is missing, expired, or rate-limited -
+        # surface a real reason instead of a bare 500.
+        raise HTTPException(status_code=502, detail=f"Comparison failed: {exc}") from exc
     return result
