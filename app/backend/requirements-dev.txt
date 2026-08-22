@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Dependency vulnerability auditing
+pip-audit==2.9.0

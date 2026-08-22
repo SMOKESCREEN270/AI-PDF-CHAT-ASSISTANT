@@ -1,0 +1,51 @@
+fastapi==0.141.1
+uvicorn[standard]==0.30.6
+python-multipart==0.0.31
+pydantic==2.9.2
+pydantic-settings==2.5.2
+SQLAlchemy==2.0.35
+psycopg2-binary==2.9.9
+alembic==1.13.2
+PyJWT==2.13.0
+passlib[bcrypt]==1.7.4
+# passlib 1.7.4 detects the bcrypt version by reading `bcrypt.__about__`,
+# which bcrypt removed in 4.1.0. On bcrypt>=4.1 this makes passlib log
+# "(trapped) error reading bcrypt version" on every startup (hashing still
+# works, but some deployment platforms surface the trapped error as a
+# failure). Pinning to the last version that still ships `__about__` avoids
+# it entirely.
+bcrypt==4.0.1
+authlib==1.6.12
+itsdangerous==2.2.0
+httpx==0.27.2
+slowapi==0.1.9
+pytest==9.0.3
+email-validator==2.2.0
+
+# PDF processing
+PyMuPDF==1.26.4
+pyclamd==0.4.0
+pdf2image==1.17.0
+pytesseract==0.3.13
+Pillow==12.3.0
+
+# RAG / retrieval
+chromadb==0.5.5
+# chromadb 0.5.5's telemetry client calls the old
+# posthog.capture(distinct_id, event, properties) positional signature.
+# Newer posthog releases (4.x+) changed capture() to take the event name as
+# the sole positional argument, which raises "capture() takes 1 positional
+# argument but 3 were given" on every chromadb client startup. chromadb
+# catches and logs this rather than crashing, but it's pure log noise -
+# pin posthog to a version that still matches the old signature.
+posthog==3.0.2
+rank-bm25==0.2.2
+# LLM/embeddings now go through OpenRouter's OpenAI-compatible REST API via
+# httpx (already a dependency above) - no dedicated SDK needed.
+
+# export
+python-docx==1.1.2
+reportlab==4.2.2
+markdown2==2.5.0
+
+python-dotenv==1.2.2
